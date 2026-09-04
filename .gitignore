@@ -1,0 +1,34 @@
+# Ignore everything
+*
+
+# But not git files...
+!.gitattributes
+!.gitignore
+# Neither these files...
+
+!*.bib
+!*.bst
+!*.cls
+!*.tex
+!*.jpeg
+!*.png
+!*.jpg
+!dictionary.pws
+!Makefile
+!warnspell.sh
+!README.md
+
+# Nor these directories...
+!cls/
+!bib/
+# !bst/
+!fig/
+!img/
+# !ist/
+!pages/
+!plots/
+!secs/
+!appendix/
+!antecedentes/
+!setup/
+!tables/
