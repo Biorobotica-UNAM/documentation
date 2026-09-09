@@ -348,125 +348,199 @@ Librería C++ (clase \texttt{Knowledge}) que encapsula la interacción vía clie
 \section[HRI]{HRI}
 \label{app:justina_hri}
 
-El módulo \textit{HRI} (\textit{Human-Robot Interaction}) gestiona la interacción hablada (síntesis y reconocimiento de voz), la detección y seguimiento de personas, y la interfaz visual de operación del robot. Localiza a la persona objetivo combinando LiDAR (piernas) y visión (cuerpo), mantiene al robot orientado o navegando hacia ella durante el seguimiento, y expone estas capacidades mediante la librería \texttt{hri\_tools}. 
+El módulo \textbf{HRI (Human-Robot Interaction)} concentra las funciones que permiten a Justina interactuar con las personas, como \textbf{hablar, escuchar, detectar y seguir personas}, además de mostrar información mediante la interfaz gráfica (GUI).
 
-A diferencia del resto del módulo, el paquete \texttt{gui} se ejecuta físicamente en la computadora embebida de la base Robotino~4 (repositorio \texttt{Robotino}) bajo el \textit{namespace} \texttt{/hardware}; se documenta aquí debido a su clasificación funcional en el repositorio y su rol como panel visual que consume tópicos de HRI y Vision.
+Para el seguimiento de personas, el sistema combina información del \textbf{LiDAR}, utilizado principalmente para detectar las piernas, y del sistema de \textbf{visión}, encargado de identificar el cuerpo. Con estos datos, el robot puede mantener localizada a la persona objetivo y orientarse o navegar hacia ella durante el seguimiento.
+
+La mayoría de estas funciones se encuentran en el paquete \texttt{hri\_tools}. La \textbf{GUI} se ejecuta por separado en la computadora embebida de la base Robotino 4, dentro del repositorio \texttt{Robotino} y bajo el namespace \texttt{/hardware}, donde recibe información de HRI y Vision mediante tópicos de ROS 2.
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{hri\_tools} (Librería cliente y launch raíz)}
-Librería \textit{Facade} (clase \texttt{HRI}) que encapsula en llamadas síncronas los servicios asíncronos de Talker, Listener, seguimiento de personas y detección de gestos (utilizada por primitivas como \texttt{Say} y \texttt{Listen} de \texttt{executor\_tools}). Aloja el archivo \texttt{hri.launch.xml}, el cual lanza bajo el \textit{namespace} \texttt{/hri} a Talker, Listener, \texttt{human\_detector} y \texttt{human\_follower}.
+El paquete \texttt{hri\_tools} funciona como una librería Facade, mediante la clase \texttt{HRI}, que proporciona una interfaz sencilla para acceder a las principales funciones de interacción humano-robot. Su objetivo es ocultar los detalles internos de comunicación con los distintos nodos y servicios de HRI.
+
+Esta librería es utilizada por primitivas de \texttt{executor\_tools}, como \texttt{Say} y \texttt{Listen}. \texttt{Say} solicita al nodo \texttt{Talker} que el robot reproduzca un mensaje por voz, mientras que \texttt{Listen} utiliza el nodo \texttt{Listener} para recibir y procesar lo que dice el usuario.
+
+El archivo \texttt{hri.launch.xml} inicia los principales nodos del módulo bajo el namespace \texttt{/hri}, entre ellos \texttt{Talker}, \texttt{Listener}, \texttt{human\_detector} y \texttt{human\_follower}, encargados de la comunicación por voz, detección y seguimiento de personas.
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{human\_detection} (\texttt{human\_detector})}
-Colección de nodos en Python basados en YOLO para detección y seguimiento de personas. 
+El paquete \texttt{human\_detection} contiene los nodos encargados de \textbf{detectar personas, estimar su posición y reconocer algunos movimientos del cuerpo} mediante visión.
+\subsubsection{\texttt{person\_tracker}}
+Este nodo combina las detecciones de YOLO con la información 3D de la cámara para calcular la posición de la persona objetivo. Con estos datos, Justina puede mantenerla localizada, orientar la cabeza hacia ella y proporcionar información útil para su seguimiento.
 
-\begin{enumerate}
-    \item \textbf{person\_tracker}: \\
-    Fusiona las detecciones de YOLO con la nube de puntos 3D de la cámara para estimar la posición tridimensional de la persona objetivo, orientar la cabeza del robot hacia ella y exponer el enfoque de visión como servicio.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/human\_detection/target\_point} (\texttt{geometry\_msgs/PointStamped}), \\
-        \texttt{/hri/human\_tracking/confidence} (\texttt{std\_msgs/Float32}), \\
-        \texttt{/hardware/head/look\_at} (\texttt{geometry\_msgs/PointStamped}), \\
-        \texttt{/human\_detection/track\_markers} (\texttt{visualization\_msgs/MarkerArray}), \\
-        \texttt{/navigation/camera\_obstacles/bypass} (\texttt{std\_msgs/Bool}).
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{/vision/detections\_list}, \\
-        \texttt{/hardware/camera/points} (nube de puntos).
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/vision/focus}, \texttt{/vision/focus/enable}, \texttt{/vision/focus/disable}.
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{/vision/enable\_continuous}.
-    \end{itemize}
+\textbf{Tópicos publicados:}
+\begin{itemize}
+    \item \texttt{/human\_detection/target\_point} (\texttt{geometry\_msgs/PointStamped}): publica la posición estimada de la persona objetivo.
+    \item \texttt{/hri/human\_tracking/confidence} (\texttt{std\_msgs/Float32}): indica el nivel de confianza del seguimiento.
+    \item \texttt{/hardware/head/look\_at} (\texttt{geometry\_msgs/PointStamped}): envía el punto hacia el cual debe orientar la cabeza el robot.    
+    \item \texttt{/human\_detection/track\_markers} (\texttt{visualization\_msgs/MarkerArray}): publica elementos visuales para observar el seguimiento.
+    \item \texttt{/navigation/camera\_obstacles/bypass} (\texttt{std\_msgs/Bool}): indica al sistema de navegación si debe ignorar temporalmente los obstáculos detectados por la cámara.
+\end{itemize}
+\textbf{Tópicos suscritos:}
+\begin{itemize}
+    \item \texttt{/vision/detections\_list}: recibe las detecciones obtenidas por el sistema de visión.
+    \item \texttt{/hardware/camera/points}: recibe la nube de puntos de la cámara para obtener información de profundidad.
+\end{itemize}
+\textbf{Servicios ofrecidos:}
+\begin{itemize}
+    \item \texttt{/vision/focus}
+    \item \texttt{/vision/focus/enable}
+    \item \texttt{/vision/focus/disable}
+\end{itemize}
+Estos servicios permiten seleccionar, activar o desactivar el seguimiento visual de un objetivo.
 
-    \item \textbf{pose\_detector\_node} (\texttt{pose\_detector.py}): \\
-    \textbf{Nota de despliegue}: Corre en el sistema activo consumido por \texttt{HRI::FindPose}, pero se lanza desde el módulo \textit{Vision} (\texttt{vision.launch.xml}) y no desde \texttt{hri.launch.xml}. Detecta si una persona está saludando o apuntando con la muñeca.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/human\_detection/pose\_image\_wrist} (\texttt{sensor\_msgs/Image}).
-        \item \textbf{Tópicos suscritos}: \\
-        Imagen RGB, nube de puntos y \texttt{camera\_info} de la cámara.
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/human\_detection/detect\_wrist}.
-    \end{itemize}
-\end{enumerate}
+\textbf{Servicios utilizados:}
+\begin{itemize}
+    \item \texttt{/vision/enable\_continuous}: activa el funcionamiento continuo del sistema de visión.
+\end{itemize}
+\subsubsection{\texttt{pose\_detector\_node} (\texttt{pose\_detector.py})}
+Este nodo detecta la \textbf{postura de una persona}, por ejemplo, si está saludando o apuntando con la mano. Aunque forma parte de \texttt{human\_detection}, se inicia desde \texttt{vision.launch.xml} y no desde \texttt{hri.launch.xml}.
+
+\textbf{Tópicos publicados:}
+\begin{itemize}
+    \item \texttt{/human\_detection/pose\_image\_wrist} (\texttt{sensor\_msgs/Image}): publica una imagen donde puede observarse la postura detectada.
+\end{itemize}
+\textbf{Tópicos suscritos:}
+\begin{itemize}
+    \item Imagen RGB de la cámara.
+    \item Nube de puntos de la cámara.
+    \item Información \texttt{camera\_info} de la cámara.
+\end{itemize}
+Estos datos permiten relacionar la imagen de la persona con su posición en el espacio.
+\textbf{Servicios ofrecidos:}
+\begin{itemize}
+    \item \texttt{/human\_detection/detect\_wrist}: solicita la detección de la muñeca para identificar gestos como saludar o apuntar.
+\end{itemize}
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{human\_follower}}
-Pipeline de seguimiento de personas que combina la detección de piernas por LiDAR y la posición de cuerpo por visión mediante filtrado estocástico.
+El paquete \texttt{human\_follower} se encarga del \textbf{seguimiento de una persona mientras Justina se desplaza}. Para ello combina la detección de piernas obtenida mediante el LiDAR con la posición del cuerpo proporcionada por el sistema de visión.
 
-\begin{enumerate}
-    \item \textbf{leg\_finder\_node}: \\
-    Procesa el barrido láser de la base para identificar patrones geométricos correspondientes a piernas humanas.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/hri/leg\_finder/legs\_pose} (\texttt{geometry\_msgs/PoseArray}), \\
-        \texttt{/hri/leg\_finder/marker}.
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{/hardware/base/scan}, \\
-        \texttt{/hri/leg\_finder/enable} (\texttt{std\_msgs/Bool}).
-    \end{itemize}
+\subsubsection{\texttt{leg\_finder\_node}}
 
-    \item \textbf{human\_follower\_nodeV2}: \\
-    Fusiona mediante un filtro de Kalman de 4 estados la posición de las piernas (\texttt{leg\_finder\_node}) y del cuerpo (\texttt{person\_tracker}), publicando metas de navegación continuas para mantener una distancia fija respecto a la persona.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/nav\_control/goal}, \\
-        \texttt{/navigation/stop}, \\
-        \texttt{/hri/human\_follower/state}, \\
-        \texttt{/hri/human\_follower/debug\_fused\_point}.
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{/hri/human\_following/enable}, \\
-        \texttt{/hri/leg\_finder/legs\_pose}, \\
-        \texttt{/human\_detection/target\_point}.
-    \end{itemize}
+Este nodo procesa la información del LiDAR de la base para identificar patrones que puedan corresponder a \textbf{piernas humanas}.
 
-    \item \textbf{human\_tracking\_node}: \\
-    Coordinador de alto nivel e interruptor principal del seguimiento. Al activarse, habilita simultáneamente la visión continua, la detección de piernas y el seguidor de cuerpo, incorporando un \textit{watchdog} sobre la confianza de la estimación para desactivar el seguimiento si el objetivo se pierde.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/hri/human\_following/enable}, \\
-        \texttt{/hri/leg\_finder/enable}, \\
-        \texttt{/vision/enable\_continuous}, \\
-        \texttt{/hri/human\_tracking/state}.
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{/hri/human\_tracking/confidence}.
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/hri/human\_tracking/enable}.
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{/vision/focus/enable}, \texttt{/vision/focus/disable}.
-    \end{itemize}
-\end{enumerate}
+\textbf{Tópicos publicados:}
+
+\begin{itemize}
+    \item \texttt{/hri/leg\_finder/legs\_pose} (\texttt{geometry\_msgs/PoseArray}): publica las posiciones de las piernas detectadas.
+    
+    \item \texttt{/hri/leg\_finder/marker}: publica información utilizada para visualizar las detecciones.
+\end{itemize}
+
+\textbf{Tópicos suscritos:}
+
+\begin{itemize}
+    \item \texttt{/hardware/base/scan}: recibe las mediciones del LiDAR de la base.
+    
+    \item \texttt{/hri/leg\_finder/enable} (\texttt{std\_msgs/Bool}): recibe la indicación para activar o desactivar la detección de piernas.
+\end{itemize}
+
+
+\subsubsection{\texttt{human\_follower\_nodeV2}}
+
+Este nodo combina la posición de las piernas obtenida por \texttt{leg\_finder\_node} con la posición del cuerpo obtenida por \texttt{person\_tracker}. Con esta información estima la ubicación de la persona y genera los comandos necesarios para que el robot la siga manteniendo una distancia determinada.
+
+\textbf{Tópicos publicados:}
+
+\begin{itemize}
+    \item \texttt{/nav\_control/goal}: envía al sistema de navegación la posición hacia la cual debe desplazarse el robot.
+    
+    \item \texttt{/navigation/stop}: permite solicitar que se detenga la navegación.
+    
+    \item \texttt{/hri/human\_follower/state}: publica el estado actual del seguimiento.
+    
+    \item \texttt{/hri/human\_follower/debug\_fused\_point}: publica la posición resultante de combinar la información de piernas y visión, utilizada principalmente para supervisar el funcionamiento del sistema.
+\end{itemize}
+
+\textbf{Tópicos suscritos:}
+
+\begin{itemize}
+    \item \texttt{/hri/human\_following/enable}: recibe la indicación para activar o desactivar el seguimiento.
+    
+    \item \texttt{/hri/leg\_finder/legs\_pose}: recibe las posiciones de las piernas detectadas.
+    
+    \item \texttt{/human\_detection/target\_point}: recibe la posición de la persona detectada mediante visión.
+\end{itemize}
+
+
+\subsubsection{\texttt{human\_tracking\_node}}
+
+Este nodo funciona como \textbf{coordinador del seguimiento}. Al activarse, habilita los componentes necesarios para detectar y seguir a una persona, como la visión continua, la detección de piernas y \texttt{human\_follower\_nodeV2}.
+
+También supervisa la confianza del seguimiento. Si el sistema deja de detectar correctamente a la persona, puede desactivar el seguimiento para evitar que el robot continúe siguiendo una posición incorrecta.
+
+\textbf{Tópicos publicados:}
+
+\begin{itemize}
+    \item \texttt{/hri/human\_following/enable}: activa o desactiva el seguidor de personas.
+    
+    \item \texttt{/hri/leg\_finder/enable}: activa o desactiva la detección de piernas.
+    
+    \item \texttt{/vision/enable\_continuous}: activa o desactiva el procesamiento continuo de visión.
+    
+    \item \texttt{/hri/human\_tracking/state}: publica el estado general del seguimiento.
+\end{itemize}
+
+\textbf{Tópicos suscritos:}
+
+\begin{itemize}
+    \item \texttt{/hri/human\_tracking/confidence}: recibe el nivel de confianza con el que se está siguiendo a la persona.
+\end{itemize}
+
+\textbf{Servicios ofrecidos:}
+
+\begin{itemize}
+    \item \texttt{/hri/human\_tracking/enable}: permite solicitar el inicio o la detención del seguimiento.
+\end{itemize}
+
+\textbf{Servicios utilizados:}
+
+\begin{itemize}
+    \item \texttt{/vision/focus/enable}: activa el seguimiento visual del objetivo.
+    
+    \item \texttt{/vision/focus/disable}: desactiva el seguimiento visual del objetivo.
+\end{itemize}
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{listener}}
-Reconocimiento de voz automatizado (ASR).
+El paquete \texttt{listener} se encarga del \textbf{reconocimiento de voz}. Su función es escuchar al usuario mediante el micrófono del robot.
 
-\begin{enumerate}
-    \item \textbf{listener\_node}: \\
-    Captura audio local desde el micrófono físico, aplica Detección de Actividad de Voz (VAD) y realiza la transcripción mediante Whisper (restringido opcionalmente por gramáticas JSON según la prueba).
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/hsrb/gui/state}.
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/hri/listener/listen}.
-    \end{itemize}
-\end{enumerate}
+\subsubsection{\texttt{listener\_node}}
+
+Este nodo captura el audio del micrófono, detecta cuándo una persona está hablando y realiza la transcripción mediante Whisper. Dependiendo de la prueba, puede limitar las respuestas esperadas utilizando archivos de gramática en formato JSON.
+
+\textbf{Tópicos publicados:}
+
+\begin{itemize}
+    \item \texttt{/hsrb/gui/state}: publica el estado del proceso de escucha para que pueda mostrarse en la interfaz gráfica.
+\end{itemize}
+
+\textbf{Servicios ofrecidos:}
+
+\begin{itemize}
+    \item \texttt{/hri/listener/listen}: permite solicitar al robot que escuche al usuario y devuelva la frase reconocida.
+\end{itemize}
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{talker}}
-Síntesis de voz (TTS).
+El paquete \texttt{talker} se encarga de la \textbf{síntesis de voz}, es decir, de convertir texto en audio para que Justina pueda hablar.
 
-\begin{enumerate}
-    \item \textbf{talker\_node}: \\
-    Sintetiza texto a señal de audio utilizando el motor Piper y reproduce la locución a través de los altavoces del robot.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/hsrb/gui/text}.
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/hri/talker/talk}.
-    \end{itemize}
-\end{enumerate}
+\subsubsection{\texttt{talker\_node}}
+
+Este nodo recibe el texto que debe decir el robot, lo convierte en una señal de audio utilizando Piper y lo reproduce mediante las bocinas.
+
+\textbf{Tópicos publicados:}
+
+\begin{itemize}
+    \item \texttt{/hsrb/gui/text}: publica el texto que Justina está diciendo para mostrarlo en la interfaz gráfica.
+\end{itemize}
+
+\textbf{Servicios ofrecidos:}
+
+\begin{itemize}
+    \item \texttt{/hri/talker/talk}: permite enviar un texto para que el robot lo reproduzca mediante voz.
+\end{itemize}
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{gui} (Paquete ROS \texttt{justina\_gui})}
