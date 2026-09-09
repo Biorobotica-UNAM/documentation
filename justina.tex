@@ -806,63 +806,70 @@ Módulo compuesto por dos paquetes (\texttt{mapless\_nav} y \texttt{debugger}) q
 \section[Manipulation]{Manipulation}
 \label{app:justina_manipulation}
 
-El módulo \textit{Manipulation} se encarga de planear y ejecutar las trayectorias de brazos y torso necesarias para tomar, colocar y manipular objetos. Actúa como puente entre los consumidores de manipulación del robot (por ejemplo, la FSM \texttt{Take} del Executor) y MoveIt2, que se usa únicamente como motor de planeación cinemática y de colisiones (IK vía TRAC-IK, planeación con OMPL/RRTConnect), sin controlar el hardware directamente. La ejecución real sobre los servomotores se delega a los nodos de \texttt{Hardware} (\texttt{arms\_node}, controlador de torso).
-
-
-% ------------------------------------------------------------
-\subsection{Paquete \texttt{manipulation\_tools} (Librería cliente y launch)}
-Proporciona las utilidades comunes de la pila de manipulación. Incluye la librería cliente \texttt{Manipulation} (patrón \textit{Facade}), que expone las funciones \texttt{PlanTrajectory} y \texttt{FollowTrajectory} como llamadas síncronas para simplificar la integración con otros módulos (como \texttt{executor\_tools}). Aloja además el archivo de lanzamiento principal (\texttt{manipulation.launch.xml}), que levanta bajo el \textit{namespace} \texttt{/manipulation} los nodos \texttt{move\_group} (MoveIt2), \texttt{manipulation\_planner\_node}, \texttt{manipulation\_controller\_node} y \texttt{manipulation\_cloud\_filter\_node}, remapeando la lectura del estado articular a la fuente canónica \texttt{/hardware/joint\_states}.
-
+El módulo \textit{Manipulation} es responsable de planear y coordinar los movimientos de los brazos y el torso para la manipulación de objetos a partir de una pose objetivo. Utiliza MoveIt2 con TRAC-IK para resolver la cinemática inversa y el algoritmo RRTConnect sobre un OctoMap del entorno para generar trayectorias libres de colisión, ejecutándolas mediante los servicios de bajo nivel del módulo \textit{Hardware}.
 
 % ------------------------------------------------------------
-\subsection{Paquetes de planeación y control}
-Contienen la lógica principal de interconexión con MoveIt2 y la ejecución de trayectorias en hardware.
+\subsection{Paquete \texttt{manipulation\_tools}}
+
+Proporciona las utilidades del módulo. Incluye la biblioteca \texttt{Manipulation}, que encapsula en llamadas síncronas las funciones \texttt{PlanTrajectory} y \texttt{FollowTrajectory}. Asimismo, aloja el \textit{launch} \texttt{manipulation.launch.xml}, encargado de levantar bajo el \textit{namespace} \texttt{/manipulation} los nodos \texttt{move\_group}, \texttt{manipulation\_planner\_node}, \texttt{manipulation\_controller\_node} y \texttt{manipulation\_cloud\_filter\_node}, remapeando \texttt{/manipulation/joint\_states} a \texttt{/hardware/joint\_states}.
 
 \begin{enumerate}
-    \item \textbf{manipulation\_planner\_node} (paquete \texttt{manipulation\_planner}): \\
-    Nodo puente entre los consumidores de manipulación y MoveIt2. Recibe una pose objetivo del efector final, valida el grupo de planeación y el \textit{tip link}, lee el estado articular real desde \texttt{/hardware/joint\_states}, y solicita la planeación a MoveIt2 forzando el pipeline OMPL con el algoritmo RRTConnect. Opcionalmente coordina el filtro de nube de manipulación, limpia el \textit{octomap} y excluye el objeto objetivo para evitar que sea tratado como obstáculo durante la fase de aproximación.
-    \begin{itemize}
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{/hardware/joint\_states} (estado articular real del robot, fuente canónica para el punto de partida).
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/manipulation/manipulation\_planner/plan\_trajectory}.
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{/manipulation/plan\_kinematic\_path} (solicitud \texttt{GetMotionPlan} a \texttt{move\_group}), \texttt{/manipulation/cloud\_filter/enable}, \texttt{/manipulation/clear\_octomap}.
-    \end{itemize}
-
-    \item \textbf{manipulation\_controller\_node} (paquete \texttt{manipulation\_controller}): \\
-    Ejecuta una trayectoria articular previamente planeada. Recibe la lista de \textit{waypoints} (bloques compuestos por posiciones de torso y 6 articulaciones del brazo correspondiente) y los envía en paralelo a los nodos de hardware, esperando confirmación bloque por bloque.
-    \begin{itemize}
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/manipulation/manipulation\_controller/follow\_trajectory}.
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{/hardware/arms/move\_right\_arm}, \texttt{/hardware/arms/move\_left\_arm}, \texttt{/hardware/torso/move\_torso}.
-    \end{itemize}
-
-    \item \textbf{manipulation\_cloud\_filter\_node} (paquete \texttt{manipulation\_tools}): \\
-    Recorta la nube de puntos cruda de la cámara a una región de interés (ROI) acotada al volumen útil de los brazos y aplica una reducción por \textit{voxelización}. Publica la nube procesada para alimentar el \textit{octomap} de MoveIt2, evitando interferencias con el suelo o zonas fuera del alcance. Permanece desactivado por defecto y se habilita bajo demanda para optimizar el cómputo.
+    \item \textbf{manipulation\_cloud\_filter\_node}: \\
+	Recorta la nube de puntos de la cámara a una región de interés y reduce su densidad por \textit{voxelización}. Publica el resultado para alimentar el OctoMap de MoveIt2 y se habilita bajo demanda.
     \begin{itemize}
         \item \textbf{Tópicos publicados}: \\
-        \texttt{/manipulation/camera/points\_filtered}, \texttt{/manipulation/cloud\_filter/debug\_markers} (marcadores opcionales de ROI/voxelización).
+        \texttt{/manipulation/camera/points\_filtered} \\
+		\texttt{/manipulation/cloud\_filter/debug\_markers}
         \item \textbf{Tópicos suscritos}: \\
-        \texttt{/hardware/camera/points} (nube cruda de la cámara).
+        \texttt{/hardware/camera/points}
         \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/manipulation/cloud\_filter/enable}.
+        \texttt{/manipulation/cloud\_filter/enable}
     \end{itemize}
 \end{enumerate}
 
-
 % ------------------------------------------------------------
-\subsection{Paquetes de soporte y dependencias (\texttt{move\_it} y \texttt{trac\_ik})}
-Paquetes complementarios para la configuración cinemática y solvers de cinemática inversa.
+\subsection{Paquete \texttt{manipulation\_planner}}
+Expone el servicio de planeación cinemática encapsulando MoveIt2.
 
 \begin{enumerate}
-    \item \textbf{move\_it}: \\
-    Paquete de configuración generado mediante \textit{MoveIt Setup Assistant} adaptado a la cinemática de Justina. Contiene las definiciones URDF/SRDF, los grupos de planeación (\texttt{left\_arm\_group}, \texttt{right\_arm\_group}), la configuración de límites articulares y el archivo \texttt{kinematics.yaml} asociado al solver TRAC-IK. Se encarga de levantar el nodo \texttt{move\_group} de MoveIt2.
-
-    \item \textbf{trac\_ik}: \\
-    Librería vendorizada de terceros (TRACLabs Robotics) utilizada como \textit{plugin} de cinemática inversa (IK) dentro de MoveIt2. No genera nodos propios del proyecto.
+    \item \textbf{manipulation\_planner\_node}: \\
+	Recibe una pose objetivo para el efector final y determina el tipo de agarre, \textit{pinch} o envolvente, según el \textit{tip link} especificado. Solicita la trayectoria a MoveIt2 mediante RRTConnect a partir del estado publicado en \texttt{/hardware/joint\_states} y, opcionalmente, coordina el filtrado de nube de puntos, la limpieza del OctoMap y la exclusión del objeto objetivo como obstáculo.
+    \begin{itemize}
+        \item \textbf{Tópicos suscritos}: \\
+        \texttt{/hardware/joint\_states}
+        \item \textbf{Servicios ofrecidos}: \\
+        \texttt{/manipulation/manipulation\_planner/plan\_trajectory}
+        \item \textbf{Servicios utilizados}: \\
+        \texttt{/manipulation/plan\_kinematic\_path} \\
+		\texttt{/manipulation/cloud\_filter/enable} \\
+		\texttt{/manipulation/clear\_octomap}
+    \end{itemize}
 \end{enumerate}
+
+% ------------------------------------------------------------
+\subsection{Paquete \texttt{manipulation\_controller}}
+Expone el servicio de control de trayectorias utilizando los servicios de Hardware.
+
+\begin{enumerate}
+    \item \textbf{manipulation\_controller\_node}: \\
+    Recibe una trayectoria y la descompone en \textit{waypoints} integrados por posiciones del torso y las seis articulaciones del brazo correspondiente, enviándolos en paralelo a los nodos de hardware y coordinando la ejecución bloque por bloque.
+    \begin{itemize}
+        \item \textbf{Servicios ofrecidos}: \\
+        \texttt{/manipulation/manipulation\_controller/follow\_trajectory}
+        \item \textbf{Servicios utilizados}: \\
+        \texttt{/hardware/arms/move\_right\_arm} \\
+		\texttt{/hardware/arms/move\_left\_arm} \\
+		\texttt{/hardware/torso/move\_torso}
+    \end{itemize}
+\end{enumerate}
+
+% ------------------------------------------------------------
+\subsection{Paquete \texttt{move\_it}}
+Contiene la configuración cinemática y semántica de Justina, incluyendo definiciones URDF y SRDF, grupos de planeación y parámetros de TRAC-IK requeridos por el nodo \texttt{move\_group} de MoveIt2.
+
+% ------------------------------------------------------------
+\subsection{Paquete \texttt{trac\_ik}}
+Integra la biblioteca de TRACLabs Robotics como \textit{plugin} de cinemática inversa para MoveIt2, sin generar nodos independientes en la arquitectura.
 
 % ============================================================
 % HARDWARE
