@@ -871,18 +871,19 @@ Paquetes complementarios para la configuración cinemática y solvers de cinemá
 \section[Hardware]{Hardware}
 \label{app:justina_hardware}
 
-El módulo \textit{Hardware} se encarga de exponer el hardware físico del robot (cabeza, torso, brazos, pinzas, base omnidireccional, cámara RGB-D y LiDAR) como una fachada de ROS 2 síncrona para el resto del sistema, y de controlar cada uno de esos actuadores/sensores a bajo nivel.
+El módulo de \textit{Hardware} abstrae los dispositivos conectados al robot y expone las interfaces requeridas para que otros módulos reciban información del sistema o envíen comandos de ejecución física. El hardware del robot se compone por cabeza, torso, brazos, pinzas, base omnidireccional, cámara RGB-D y LiDAR.
 
-\textit{Arquitectura distribuida:} el sistema de Justina corre en dos computadoras que forman un mismo grafo de ROS 2 (descubrimiento DDS/CycloneDDS sobre una red Ethernet dedicada), ambas bajo el \textit{namespace} común \texttt{/hardware}:
-\begin{itemize}
-\item La \textbf{computadora principal} ejecuta \texttt{hardware\_tools} (la fachada \texttt{Hardware}), \texttt{door\_detector}, \texttt{scanner} (puente de orientación de cabeza), \texttt{kinect\_ros2} y el \textit{driver} de cámara RGB-D (\texttt{openni2\_camera}), además de todos los módulos de software de más alto nivel (Executor, HRI, Knowledge, Manipulation, Navigation, Planning, Supervisor, Vision).
-\item La \textbf{computadora embebida en la base Robotino 4 (FESTO)} (repositorio \texttt{Robotino}) ejecuta los \textit{drivers} de bajo nivel de la base, cabeza, torso, brazos y pinzas (\texttt{justina\_hardware}, \texttt{base}, \texttt{head}, \texttt{torso}, \texttt{arms}, \texttt{grippers}, \texttt{joint\_states\_parser}) y el panel de operación (\texttt{gui}, documentado en la sección de \textit{HRI} por la categorización del propio repositorio).
-\end{itemize}
-El paquete \texttt{justina\_description} está duplicado byte a byte en ambos repositorios (cada computadora necesita el URDF para su propio \texttt{robot\_state\_publisher} / TF local), por lo que se documenta una sola vez. Los dos repositorios son consistentes entre sí: los nombres de tópicos y servicios que \texttt{hardware\_tools/Hardware.hpp} espera del lado de la base Robotino (p. ej. \texttt{/hardware/arms/move\_right\_arm}, \texttt{/hardware/torso/current\_pose}) coinciden exactamente con los que los nodos de \texttt{Robotino} realmente exponen.
+La arquitectura de software de Justina está distribuida en dos computadoras que forman un mismo grafo de ROS 2, comunicadas mediante el middleware CycloneDDS sobre una red Ethernet dedicada. Todos los nodos e interfaces del sistema se exponen bajo el namespace común \texttt{/hardware} para indicar su pertenencia a este paquete:
+
+La \textbf{computadora principal} ejecuta los nodos \path{door_detector}, \path{scanner}, \path{depth_image_proc} y el driver de cámara RGB-D (\path{openni2_camera}), además de todos los módulos de software de más alto nivel (Executor, HRI, Knowledge, Manipulation, Navigation, Planning, Supervisor, Vision).
+
+La \textbf{computadora embebida en la base Robotino 4 (FESTO)} (repositorio \texttt{Robotino}) ejecuta los drivers de la base, cabeza, torso, brazos y pinzas y el panel de operación \texttt{gui}, documentado en la sección de \nameref{app:justina_hri}.
+
+El paquete \texttt{justina\_description} está duplicado byte a byte en ambas computadoras (cada computadora necesita el URDF para su propio \texttt{robot\_state\_publisher} / TF local), por lo que se documenta una sola vez. Los dos repositorios son consistentes entre sí: los nombres de tópicos y servicios que \texttt{hardware\_tools/Hardware.hpp} espera (p. ej. \texttt{/hardware/arms/move\_right\_arm}, \texttt{/hardware/torso/current\_pose}) coinciden exactamente con los que los nodos de \texttt{Robotino} realmente exponen.
 
 % ------------------------------------------------------------
-\subsection{Paquete \texttt{hardware\_tools} (Librería cliente y launch raíz)}
-Librería \textit{Facade} (clase \texttt{Hardware}) que encapsula en llamadas síncronas los servicios de torso, cabeza, brazos, pinzas, base y detección de puerta, para que otros módulos no manejen clientes asíncronos de ROS 2 directamente. Aloja el archivo \texttt{hardware.launch.xml} (que levanta \texttt{openni2\_camera}, \texttt{depth\_image\_proc}, \texttt{door\_detector} y \texttt{scanner}, así como condicionalmente el \textit{bringup} de Takeshi/HSR) y administra la comunicación síncrona del módulo.
+\subsection{Paquete \texttt{hardware\_tools}}
+Implementa la clase Hardware, bajo el patrón \textit{Facade}, como biblioteca  para encapsular en llamadas síncronas los servicios de ROS 2 para el torso, cabeza, brazos, pinzas, base y detección de puerta. Adicionalmente, aloja el archivo \texttt{hardware.launch.xml}, responsable de iniciar los nodos del módulo que se ejecutan en la computadora principal.
 
 % ------------------------------------------------------------
 \subsection{Paquetes de percepción de la computadora principal (\texttt{door\_detector}, \texttt{scanner}, \texttt{kinect\_ros2} y \texttt{justina\_description})}
@@ -906,9 +907,6 @@ Puente entre un punto 3D de interés (publicado por \texttt{Hardware::LookAt}) y
     \item \textbf{Tópicos suscritos}: \\
     \texttt{/hardware/head/look\_at} (\texttt{geometry\_msgs/PointStamped}), \texttt{/hardware/head/current\_pose} (\texttt{std\_msgs/Float32MultiArray}), \texttt{/navigation/status} (\texttt{action\_msgs/GoalStatusArray}).
 \end{itemize}
-
-\item \textbf{kinect\_ros2}: \\
-Controlador de terceros (basado en \texttt{libfreenect}) para la cámara Kinect v1, vendorizado en el árbol de código. No forma parte del \textit{pipeline} activo de cámara (que usa \texttt{openni2\_camera}); sólo se referencia desde \textit{launches} de depuración.
 
 \item \textbf{simple\_justina\_sim} (nodo del paquete \texttt{justina\_description}): \\
 Simulador ligero en software utilizado únicamente en configuración de pruebas sin robot físico (\texttt{justina\_sim.launch.xml}). Sustituye a \texttt{hardware\_tools} y a los \textit{drivers} reales: integra la velocidad comandada, publica odometría, TF \texttt{odom a base\_link}, articulaciones falsas y un láser simulado, e implementa directamente los servicios de movimiento de cabeza, torso y brazos.
