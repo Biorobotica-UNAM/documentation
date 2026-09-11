@@ -1,11 +1,17 @@
 \label{app:justina}
 
-La arquitectura de software de \emph{Justina}, robot de servicio doméstico del Laboratorio de Bio-Robótica de la UNAM, se implementa sobre ROS~2 y distribuye sus paquetes en dos categorías de módulos:
+La arquitectura de software de \emph{Justina}, robot de servicio doméstico del Laboratorio de Bio-Robótica de la UNAM, se implementa sobre ROS~2 y divide los módulos que la conforman en dos categorías:
 
 \begin{itemize}
     \item \textbf{Módulos orquestadores}: Administran la operación autónoma (\emph{Planning}, \emph{Supervisor} y \emph{Executor}).
     \item \textbf{Módulos especializados}: Proporcionan capacidades específicas (\emph{Knowledge}, \emph{HRI}, \emph{Vision}, \emph{Navigation}, \emph{Manipulation} y \emph{Hardware}).
 \end{itemize}
+
+El procesamiento se distribuye en dos computadoras que forman parte del mismo grafo de ROS 2, comunicadas mediante el middleware CycloneDDS sobre una red Ethernet dedicada.
+
+La \textbf{computadora principal} ejecuta los nodos \path{door_detector}, \path{scanner}, \path{depth_image_proc} y el driver de cámara RGB-D (\path{openni2_camera}), pertenecientes al módulo de \nameref{app:justina_hardware}, además de todos los módulos de alto nivel: \nameref{app:justina_executor}, \nameref{app:justina_hri}, \nameref{app:justina_knowledge}, \nameref{app:justina_manipulation}, \nameref{app:justina_navigation}, \nameref{app:justina_planning}, \nameref{app:justina_supervisor}, \nameref{app:justina_vision}.
+
+La \textbf{computadora embebida en la base Robotino 4 (FESTO)} (repositorio \texttt{Robotino}) ejecuta los drivers de la base, cabeza, torso, brazos y pinzas y el panel de operación \texttt{gui}, documentado en la sección de \nameref{app:justina_hri}.
 
 La estructura de cada módulo, especificando sus paquetes, nodos e interfaces de comunicación, se documenta a continuación.
 
@@ -871,15 +877,9 @@ Paquetes complementarios para la configuración cinemática y solvers de cinemá
 \section[Hardware]{Hardware}
 \label{app:justina_hardware}
 
-El módulo de \textit{Hardware} abstrae los dispositivos conectados al robot y expone las interfaces requeridas para que otros módulos reciban información del sistema o envíen comandos de ejecución física. El hardware del robot se compone por cabeza, torso, brazos, pinzas, base omnidireccional, cámara RGB-D y LiDAR.
+El módulo de \textit{Hardware} abstrae los dispositivos conectados al robot y expone las interfaces requeridas con el namespace \texttt{/hardware} para que otros módulos reciban información del sistema o envíen comandos de ejecución física. El hardware del robot se compone por cabeza, torso, brazos, pinzas, base omnidireccional, cámara RGB-D y LiDAR.
 
-La arquitectura de software de Justina está distribuida en dos computadoras que forman un mismo grafo de ROS 2, comunicadas mediante el middleware CycloneDDS sobre una red Ethernet dedicada. Todos los nodos e interfaces del sistema se exponen bajo el namespace común \texttt{/hardware} para indicar su pertenencia a este paquete:
-
-La \textbf{computadora principal} ejecuta los nodos \path{door_detector}, \path{scanner}, \path{depth_image_proc} y el driver de cámara RGB-D (\path{openni2_camera}), además de todos los módulos de software de más alto nivel (Executor, HRI, Knowledge, Manipulation, Navigation, Planning, Supervisor, Vision).
-
-La \textbf{computadora embebida en la base Robotino 4 (FESTO)} (repositorio \texttt{Robotino}) ejecuta los drivers de la base, cabeza, torso, brazos y pinzas y el panel de operación \texttt{gui}, documentado en la sección de \nameref{app:justina_hri}.
-
-El paquete \texttt{justina\_description} está duplicado byte a byte en ambas computadoras (cada computadora necesita el URDF para su propio \texttt{robot\_state\_publisher} / TF local), por lo que se documenta una sola vez. Los dos repositorios son consistentes entre sí: los nombres de tópicos y servicios que \texttt{hardware\_tools/Hardware.hpp} espera (p. ej. \texttt{/hardware/arms/move\_right\_arm}, \texttt{/hardware/torso/current\_pose}) coinciden exactamente con los que los nodos de \texttt{Robotino} realmente exponen.
+El paquete \texttt{justina\_description} está duplicado byte a byte en ambas computadoras, por lo que se documenta una sola vez.
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{hardware\_tools}}
