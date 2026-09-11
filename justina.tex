@@ -1,13 +1,13 @@
 \label{app:justina}
 
-La arquitectura de software de \emph{Justina}, robot de servicio doméstico del Laboratorio de Bio-Robótica de la UNAM, se implementa sobre ROS~2 y distribuye sus paquetes en dos categorías de módulos:
+La arquitectura de software de \emph{Justina}, robot de servicio doméstico del Laboratorio de Bio-Robótica de la UNAM, se implementa sobre ROS~2 y organiza sus paquetes en dos categorías de módulos:
 
 \begin{itemize}
     \item \textbf{Módulos orquestadores}: Administran la operación autónoma (\emph{Planning}, \emph{Supervisor} y \emph{Executor}).
     \item \textbf{Módulos especializados}: Proporcionan capacidades específicas (\emph{Knowledge}, \emph{HRI}, \emph{Vision}, \emph{Navigation}, \emph{Manipulation} y \emph{Hardware}).
 \end{itemize}
 
-La estructura de cada módulo, especificando sus paquetes, nodos e interfaces de comunicación, se documenta a continuación.
+Estos módulos se ejecutan en dos computadoras comunicadas vía Ethernet, formando un único grafo de ROS~2. La computadora portátil, montada en un soporte dedicado detrás del torso y sobre la base móvil, concentra prácticamente todos los paquetes; la computadora embebida, en cambio, únicamente alberga paquetes de control de sensores, actuadores y la interfaz gráfica. La estructura de cada módulo, especificando sus paquetes, nodos e interfaces de comunicación, se documenta a continuación.
 
 % ============================================================
 % PLANNING
