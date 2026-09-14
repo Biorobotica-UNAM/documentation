@@ -220,70 +220,168 @@ Paquete de orquestación (sólo archivos \textit{launch}) que centraliza el arra
 % ============================================================
 
 \section[Executor]{Executor}
-\label{app:justina_executor}
+\label{sec:justina_executor}
 
-El módulo \textit{Executor} ejecuta secuencialmente las instrucciones del plan entregado por \textit{Planning}/\textit{Supervisor}. Se encarga de solicitar cada instrucción, traducirla a una meta de acción concreta y despachar su ejecución mediante máquinas de estados finitos (FSM) que orquestan las capacidades del robot (navegación, manipulación, HRI, visión y hardware), reportando el resultado de vuelta al Supervisor.
+El módulo \textit{Executor} es la capa intermedia encargada de la ejecución secuencial de las instrucciones generadas por la planificación simbólica (\textit{Planning/Supervisor}). Su objetivo primordial es desacoplar el razonamiento deliberativo de alto nivel (en CLIPS) de la ejecución física de las primitivas de acción (navegación, visión, manipulación y HRI). 
+
+Arquitectónicamente, se divide en dos componentes cooperativos: un despachador reactivo (\texttt{executor\_manager}) que gestiona las peticiones de instrucciones y su autorización, y un servidor de ejecución distribuida (\texttt{executor\_worker}) que delega el movimiento físico a máquinas de estados finitos (FSM) modularizadas en la librería \texttt{executor\_tools}.
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{executor\_manager}}
-Funciona como puente entre el \textit{Supervisor} y la capa de ejecución física. Solicita la instrucción, convierte el texto crudo (p. ej. \textit{"Justina goto table"}) en una meta estructurada de acción, la despacha y gestiona el ciclo de vida de la tarea (transición al siguiente paso, salto por rechazo o reintento configurable hasta \texttt{MAX\_RETRIES}).
+\label{subsec:executor_manager}
+
+Actúa como el orquestador y puente de comunicación entre el \textit{Supervisor} y los trabajadores físicos. Implementa un lazo cerrado asíncrono regulado por pulsos: solicita la instrucción textual activa, la deserializa en estructuras formales de ROS~2, despacha la meta al \textit{Worker} correspondiente y somete el resultado obtenido a un proceso de validación y autorización con el Supervisor antes de permitir el avance del plan.
 
 \begin{enumerate}
     \item \textbf{executor\_manager\_node}: \\
-    Orquesta el flujo de ejecución del plan y reacciona a los estados devueltos por el servidor de acciones (\texttt{SUCCEEDED}, \texttt{REJECTED}, \texttt{FAILURE}, \texttt{ABORTED}).
+    Nodo orquestador reactivo. Su flujo de ejecución se rige bajo las siguientes fases:
     \begin{itemize}
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{/input\_trigger} (\texttt{std\_msgs/Empty}).
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{/request\_instruction}, \\
-        \texttt{/supervisor/supervisor\_executor/authorize}.
-        \item \textbf{Acciones utilizadas}: \\
-        \texttt{/executor/execute\_task} (\texttt{executor\_interfaces/action/ExecuteTask}).
+        \item \textbf{Disparo (\textit{Triggering})}: Permanece inactivo hasta recibir un pulso en el tópico \path{/input_trigger}. Si no existe una acción previa en curso, desbloquea la petición de tareas.
+        \item \textbf{Adquisición y Parseo}: Consulta el servicio \path{/request_instruction}. Si la respuesta es denegada por sincronización interna (\texttt{blocked\_by\_manager}), activa un temporizador de pared (\textit{wall timer}) a $200\,\text{ms}$ para reintentar la solicitud. Al recibir una instrucción válida (formato: \textit{"<agent> <action> <argumentos>"}), divide la cadena en tokens: asigna el agente, convierte la acción estrictamente a minúsculas y concatena los argumentos restantes en el arreglo \texttt{args} de un mensaje \texttt{TaskStep}.
+        \item \textbf{Despacho de Acción}: Empaqueta el \texttt{TaskStep} dentro de una meta del tipo de acción \texttt{ExecuteTask} y la despacha al servidor \path{/executor/execute_task}. Escucha asíncronamente el progreso (\textit{feedback}) y el resultado final emitido por el trabajador.
+        \item \textbf{Ciclo de Autorización}: Al concluir la tarea (sea en estado \texttt{SUCCESS} o \texttt{FAILED}), el nodo envía la acción, su argumento y el mensaje de retorno del trabajador al servicio \path{/supervisor/supervisor_executor/authorize}. El nodo concluye su intervención en espera del siguiente pulso externo del Supervisor, delegando la decisión de bifurcación o continuación del plan a la capa deliberativa superior.
+    \end{itemize}
+
+    \textbf{Interfaces del nodo}:
+    \begin{itemize}
+        \item \textbf{Tópicos suscritos}:
+        \begin{itemize}
+            \item \path{/input_trigger} (\texttt{std\_msgs/msg/Empty}): Pulso de sincronización para requerir el siguiente paso del plan.
+        \end{itemize}
+        \item \textbf{Clientes de servicio}:
+        \begin{itemize}
+            \item \path{/request_instruction} (\texttt{std\_srvs/srv/Trigger}): Solicita la siguiente directiva textual a la cola de planificación.
+            \item \path{/supervisor/supervisor_executor/authorize} 
+            
+            (\texttt{supervisor\_executor\_interfaces/srv/AuthorizeTask}): Valida el resultado textual emitido por el trabajador frente a los criterios del autorizador.
+        \end{itemize}
+        \item \textbf{Clientes de acción}:
+        \begin{itemize}
+            \item \path{/executor/execute_task} (\texttt{executor\_interfaces/action/ExecuteTask}): Canal asíncrono para enviar metas operativas al trabajador y monitorear retroalimentación en tiempo real.
+        \end{itemize}
     \end{itemize}
 \end{enumerate}
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{executor\_worker}}
-Capa de ejecución física que expone el servidor de acciones de ROS~2. Sigue una política de \textit{"accept-to-report"} (acepta incluso metas inválidas para notificar formalmente el rechazo al Supervisor) y despacha cada tarea aceptada en un hilo independiente para evitar el bloqueo del nodo.
+\label{subsec:executor_worker}
+
+Constituye la capa de ejecución física y despacho dinámico de tareas. Expone el servidor de acciones principal de ROS~2 y desacopla la recepción de peticiones del procesamiento cinemático y sensorial mediante hilos de trabajo independientes. 
+
+Su diseño implementa el patrón despachador (\textit{Dispatcher}) basado en una tabla de dispersión (\texttt{actionMap\_}) que vincula cadenas de texto con clausuras (\textit{lambdas}) tipadas, aislando el ciclo de vida de cada máquina de estados finitos (FSM).
 
 \begin{enumerate}
     \item \textbf{executor\_worker\_node}: \\
-    Mapea el campo de acción recibido hacia la clase FSM correspondiente en \texttt{executor\_tools}.
+    Servidor de acciones y gestor de ciclo de vida de herramientas. Su operación interna se caracteriza por:
     \begin{itemize}
-        \item \textbf{Acciones ofrecidas}: \\
-        \texttt{/executor/execute\_task} (\texttt{executor\_interfaces/action/ExecuteTask}).
+        \item \textbf{Política de Aceptación Incondicional (\textit{Accept-to-Report})}: El manejador \texttt{handleGoal} acepta cualquier meta entrante (\texttt{ACCEPT\_AND\_EXECUTE}). Si una acción es desconocida, malformada o no soportada, no se rechaza a nivel de transporte ROS~2, sino que se ejecuta para devolver un mensaje estructurado de fallo formal (\texttt{TaskResult::FAILURE}) con el detalle del error, permitiendo al \textit{Supervisor} diagnosticar la causa.
+        \item \textbf{Concurrencia sin Bloqueo}: Al ser aceptada una meta (\texttt{handleAccepted}), el nodo delega la ejecución de la FSM a un hilo desacoplado mediante \texttt{std::thread(...).detach()}. Esto mantiene libre el ejecutor de ROS~2 para continuar atendiendo callbacks de diagnóstico, cancelaciones y publicación de tópicos.
+        \item \textbf{Aislamiento y Manejo de Excepciones}: El despachador envuelve la ejecución en un bloque \texttt{try-catch} jerárquico. Cualquier excepción de hardware o puntero nulo lanzada por las librerías \texttt{*\_tools} es interceptada, transformando el error en un resultado \texttt{FAILED} con la traza de la excepción y previniendo la caída del proceso.
+    \end{itemize}
+
+    \textbf{Interfaces del nodo}:
+    \begin{itemize}
+        \item \textbf{Servidores de acción}:
+        \begin{itemize}
+            \item \path{/executor/execute_task} (\texttt{executor\_interfaces/action/ExecuteTask}): Recibe la meta con la instrucción (\texttt{step\_id}, \texttt{action}, \texttt{args}), publica retroalimentación periódica (\textit{feedback}) con los microestados de la FSM y retorna el reporte final (\texttt{TaskResult}).
+        \end{itemize}
     \end{itemize}
 \end{enumerate}
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{executor\_tools} (Librería FSM)}
-Librería C++ de máquinas de estado finitos que encapsulan las primitivas de acción del robot. Cada FSM se comunica con las librerías \texttt{*\_tools} de otros módulos y devuelve un objeto \texttt{Result} uniforme (\texttt{success}, \texttt{state}, \texttt{message}). 
+\label{subsec:executor_tools}
 
-Las primitivas registradas en el despachador (\texttt{actionMap}) son:
+El paquete \texttt{executor\_tools} es una biblioteca de clases en C++ que encapsula el comportamiento reactivo de Justina mediante máquinas de estados finitos (FSM). Cada herramienta implementa la interfaz común \texttt{run(argument, goal\_handle)}, reporta retroalimentación periódica (\textit{feedback}) y retorna un objeto \texttt{Result} uniforme (\texttt{success}, \texttt{status}, \texttt{message}) al despachador del trabajador.
+
+\subsubsection{Resumen Funcional de Primitivas}
 
 \begin{itemize}
-    \item \texttt{say} (\texttt{Say}): Pronuncia una frase del banco de conocimiento mediante sintetizador de voz (TTS).
-    \item \texttt{listen} (\texttt{Listen}): Captura audio, extrae entidades nombradas y actualiza el estado del mundo.
-    \item \texttt{go\_to} (\texttt{GoTo}): Ajusta la altura del torso y navega a una ubicación nombrada.
-    \item \texttt{check} (\texttt{Check}): Verifica el estado de un componente de hardware o sensor (p. ej. estado de una puerta).
-    \item \texttt{point} (\texttt{Point}): Alinea la base y la cabeza hacia un objetivo y extiende el brazo para señalarlo.
-    \item \texttt{give} (\texttt{Give}): Extiende el brazo que sostiene un objeto y abre el \textit{gripper} tras confirmar la recepción.
-    \item \texttt{receive} (\texttt{Receive}): Extiende el brazo con el \textit{gripper} abierto y lo cierra al detectar el objeto entregado por una persona.
-    \item \texttt{take} (\texttt{Take}): FSM principal de agarre. Ejecuta la aproximación visual fina mediante la clase de soporte \texttt{VisualGraspApproach} (cálculo de candidatos \texttt{FRONT}/\texttt{TOP} y corrección por TF del marcador), planea con \texttt{manipulation\_tools}, cierra el \textit{gripper} y retrae la trayectoria.
-    \item \texttt{verify\_take} (\texttt{VerifyTake}): Confirma por visión la presencia del objeto tras la maniobra de agarre.
-    \item \texttt{drop} (\texttt{Drop}): Consume una TF de espacio seguro producida por \texttt{FindSpace} y deposita el objeto.
-    \item \texttt{find\_space} (\texttt{FindSpace}): Localiza y valida una TF de espacio libre sobre superficies (mesas, repisas) para depositar objetos.
-    \item \texttt{find\_object} (\texttt{FindObject}): Escanea con la cabeza, detecta objetos por visión y actualiza su pose en el mundo.
-    \item \texttt{find\_person} (\texttt{FindPerson}): Detecta, localiza e identifica a una persona, actualizando su registro en el estado del mundo.
-    \item \texttt{find\_pose} (\texttt{FindPose}): Detecta la postura de una persona y la almacena en un búfer compartido.
-    \item \texttt{approach} / \texttt{approach\_partial} (\texttt{Approach}): Aproxima al robot a una persona u objeto. La variante \texttt{approach\_partial} invoca \texttt{runPartial} para acercamientos controlados e incompletos.
-    \item \texttt{align} (\texttt{Align}): Alinea la base respecto a un objetivo visual mediante control en lazo cerrado.
-    \item \texttt{focus} (\texttt{Focus}): Centra la cámara de la cabeza en un objetivo previamente detectado.
-    \item \texttt{follow} (\texttt{Follow}): Habilita o deshabilita el servicio de seguimiento de personas.
-    \item \texttt{analyze\_objects} (\texttt{AnalyzeObjects}): Realiza análisis de conteo, tamaño o color en objetos detectados.
-    \item \texttt{analyze\_person} (\texttt{AnalyzePerson}): Analiza vestimenta o gestos de una persona.
-    \item \texttt{save\_loc} (\texttt{SaveLoc}): Guarda la pose actual o relativa del robot como una nueva ubicación nombrada.
-    \item \texttt{fold} (\texttt{Fold}): Dobla una prenda sobre una mesa en dos fases (mangas y base) guiándose por puntos clave de visión.
+    \item \textbf{\texttt{Take} / \texttt{VisualGraspApproach}}: Ejecuta la prensión cinemática de objetos en mesas o repisas planificando trayectorias con MoveIt!. Genera candidatos de aproximación frontal o cenital, reordena la secuencia articular (hombro/codo $\to$ muñeca $\to$ torso), aplica corrección en lazo cerrado por servovisual con la base móvil y repliega el brazo invirtiendo analíticamente la trayectoria.
+    
+    \item \textbf{\texttt{VerifyTake}}: Inspección visual post-manipulación con OWL-ViT v2. Compara la escena actual contra la pose previa registrada en \texttt{Knowledge}; si el objeto aún se detecta en la superficie, limpia la asignación de la mano del robot y emite un fallo de prensión.
+
+    \item \textbf{\texttt{Drop}}: Coloca objetos en mesas, estantes, contenedores o en el suelo (\texttt{floor}). Consume la pose calculada por \texttt{FindSpace} o \texttt{Knowledge}, planifica la aproximación con orientación de herramienta fija ($q_y = -0.707, q_w = 0.707$), abre el \textit{gripper} y retrae el brazo respetando prismas de exclusión para no colisionar con el objeto liberado.
+
+    \item \textbf{\texttt{FindSpace}}: Segmenta la nube de puntos RGB-D activando servicios dedicados para mesa, contenedor o estante. Valida límites volumétricos en \path{base_link}, descarta transformadas obsoletas y almacena la entidad \texttt{safe\_drop/1} con su pose global en \path{map} y su meta de aproximación relativa.
+
+    \item \textbf{\texttt{Give}}: Transfiere un objeto a una persona. Identifica qué mano sostiene el artículo solicitado, extiende el brazo hacia adelante, enuncia un conteo regresivo por voz, abre el efector final, espera $2\,\text{s}$ para el relevo manual y actualiza la vacancia de la mano en \texttt{Knowledge}.
+
+    \item \textbf{\texttt{Receive}}: Recibe un objeto de un usuario. Verifica qué brazo se encuentra disponible (priorizando el izquierdo), extiende la extremidad con el \textit{gripper} abierto, solicita verbalmente la entrega, cierra la pinza tras una pausa y actualiza la posesión del objeto en el modelo del mundo.
+
+    \item \textbf{\texttt{FindObject}}: Barrido sensorial de la cabeza para localizar objetos o mobiliario. Soporta consultas de asientos libres (\texttt{"seat"}) y detección abierta con OWL-ViT v2. Centra el eje óptico sobre el blanco mediante \path{hardware_->LookAt()} y actualiza las coordenadas de manipulación (3D) y navegación (2D).
+
+    \item \textbf{\texttt{FindPerson}}: Barrido visual para localización y seguimiento facial de personas. Estabiliza activamente los servos del cuello (\texttt{waitForHeadStable}), centra el rostro en el encuadre óptico mediante control en lazo cerrado e interactúa con el reconocedor facial para identificar usuarios conocidos o registrar dinámicamente nuevos invitados (\texttt{guest\_<id>}).
+
+    \item \textbf{\texttt{FindPose}}: Detecta posturas humanas (sentado, apuntando, mano alzada). Proyecta una pose de aproximación escalada al $95\%$ para no invadir el espacio personal y registra la coordenada en el búfer compartido \texttt{customer\_pose\_map\_} en marco \path{map}.
+
+    \item \textbf{\texttt{Align}}: Controlador proporcional angular a $20\,\text{Hz}$ ($k_p = 0.025$, banda $[0.04, 0.20]\,\text{rad/s}$) para orientar la base del robot paralelamente al borde de mesas o de cara a contenedores, exigiendo 3 muestras consecutivas bajo $1.5^\circ$ de error.
+
+    \item \textbf{\texttt{Focus}}: Conmuta el seguimiento y fijación visual continua en el subsistema de visión mediante banderas booleanas.
+
+    \item \textbf{\texttt{AnalyzeObjects}}: Aplica razonamiento visual sobre objetos en mesas. Implementa conteo acumulado (\texttt{count}), comparación cardinal entre clases (\texttt{compare}) y filtrado por tamaño (\texttt{size}) o color (\texttt{color}), registrando la pose de la instancia elegida para habilitar su prensión inmediata con \texttt{Take}.
+
+    \item \textbf{\texttt{AnalyzePerson}}: Inspecciona personas en la escena evaluando color de vestimenta, gestos corporales dinámicos (\texttt{waving}, \texttt{pointing}, \texttt{raising}) o su combinación, generando una pose de aproximación hacia el individuo analizado.
+
+    \item \textbf{\texttt{Say}}: Orquesta la síntesis de voz (TTS) extrayendo frases parametrizadas del banco de \texttt{Knowledge}, resolviendo variables temporales (\texttt{day\_of\_week}) o instrucciones de guiado, sustituyendo guiones bajos por pausas naturales y ofreciendo respaldo directo sobre texto plano.
+
+    \item \textbf{\texttt{Listen}}: Captura comandos de voz (ASR) en dos modalidades: modo simple (palabra clave directa) y modo completo (\texttt{<categoría>\_<atributo>\_<índice>}), extrayendo entidades semánticas con hasta 3 reintentos para registrar en \texttt{Knowledge}.
+
+    \item \textbf{\texttt{Point}}: Rota la base móvil para absorber el ángulo de paneo de la cabeza mientras suaviza el cuello a cero mediante filtrado exponencial ($\alpha = 0.1$) y extiende el brazo izquierdo para señalar un objetivo.
+
+    \item \textbf{\texttt{Check}}: Verifica condiciones físicas discretas del entorno mediante sensores de hardware, principalmente el estado abierto o cerrado de puertas de acceso (\texttt{CheckDoorState}).
+
+    \item \textbf{\texttt{Follow}}: Conmuta el servicio de rastreo de personas en lazo cerrado gestionado por la capa de HRI.
+
+    \item \textbf{\texttt{GoTo}}: Desplaza la base hacia coordenadas topológicas predefinidas en el mapa global invocando la navegación detallada.
+
+    \item \textbf{\texttt{Approach}}: Aproximación semántica hacia personas u objetos. Proyecta poses locales (\path{base_link}) a globales (\path{map}), frena el controlador cinemático al entrar en tolerancia por TF, aplica corrección residual para colocación (\texttt{safe\_drop}) y desplaza la base lateralmente ($\pm 0.15\,\text{m}$) para alinear el hombro que ejecutará la acción. En modo parcial, mantiene un margen de respeto de $0.75\,\text{m}$ frente al usuario.
+
+    \item \textbf{\texttt{SaveLoc}}: Registra ubicaciones topológicas en el gestor de mapas, interceptando casos especiales como puntos de retorno a clientes, avances con desfase angular de $+90^\circ$ (\texttt{kitchen\_bar}) o poses de calibración inicial para el filtro AMCL.
+
+    \item \textbf{\texttt{Fold}}: Coreografía bimanual para el doblado de prendas sobre mesas. Identifica puntos clave visuales, repliega secuencialmente ambas mangas hacia el interior, toma el dobladillo inferior y avanza linealmente la base ($0.15\,\text{m}$ a $0.08\,\text{m/s}$) para depositar la mitad inferior sobre la prenda.
+\end{itemize}
+
+\subsubsection{Interfaces de Comunicación y Ecosistema ROS~2}
+\label{subsubsec:executor_tools_interfaces}
+
+Las herramientas de \texttt{executor\_tools} canalizan sus entradas, salidas y sincronizaciones a través del siguiente conjunto de interfaces del grafo de ROS~2 y del árbol de transformaciones:
+
+\begin{itemize}
+    \item \textbf{Servidores de Acción}:
+    \begin{itemize}
+        \item \path{/executor/execute_task} (\texttt{executor\_interfaces/action/ExecuteTask}): Servidor de acción principal donde cada FSM reporta retroalimentación de microestados (\texttt{READY}, \texttt{APPROACHING}, \texttt{DETECTING}, etc.) y emite el resultado estructurado final.
+    \end{itemize}
+
+    \item \textbf{Tópicos Suscritos}:
+    \begin{itemize}
+        \item \path{/navigation/status} (\texttt{actionlib\_msgs/msg/GoalStatus}): Monitoreado por \texttt{Approach} para detectar la llegada a la meta o el bloqueo del planificador de navegación.
+        \item \path{/tf} y \path{/tf_static} (\texttt{tf2\_msgs/msg/TFMessage}): Consumidos mediante \texttt{tf2\_ros::Buffer} para resolver cinemática, distancias euclidianas relativas y proyecciones de coordenadas.
+    \end{itemize}
+
+    \item \textbf{Tópicos Publicados}:
+    \begin{itemize}
+        \item \path{/nav_control/goal} (\path{geometry_msgs/msg/PoseStamped}): Emitido mediante la fachada \texttt{Navigation} para enviar metas de navegación o forzar el paro cinemático inmediato.
+        \item \path{/cmd_vel} (\path{geometry_msgs/msg/Twist}): Publicado a través de la fachada \texttt{Hardware} para comandar velocidades lineales y angulares directas (\texttt{Align}, \texttt{Point}, \texttt{Drop}, \texttt{Fold}, \texttt{Approach}).
+    \end{itemize}
+
+    \item \textbf{Clientes de Servicio}:
+    \begin{itemize}
+        \item \path{/vision/table_drop_tf/enable} (\path{std_srvs/srv/SetBool}): Habilita el detector de espacio plano en mesas en \texttt{FindSpace}.
+        \item \path{/vision/container_drop_tf/enable} (\path{std_srvs/srv/SetBool}): Habilita la segmentación geométrica de contenedores en \texttt{FindSpace}.
+        \item \path{/vision/shelf_drop_tf/enable} (\path{std_srvs/srv/SetBool}): Habilita la segmentación de niveles de estantes en \texttt{FindSpace}.
+        \item \path{/vision/owl/owlv2_service} (\path{vision_interfaces/srv/GetDetections}): Servicio de inferencia visual abierta basado en lenguaje natural utilizado en \texttt{FindObject}, \texttt{VerifyTake}, \texttt{FindSpace} y \texttt{Align}.
+        \item \path{/hri/human_tracking/enable} (\path{std_srvs/srv/SetBool}): Conmuta el subsistema de rastreo de personas en \texttt{Follow}.
+        \item \path{/vision/container_drop_tf_node} (\path{rcl_interfaces/srv/SetParameters}): Ajusta en tiempo de ejecución las alturas de liberación y regiones de interés (ROI) en \texttt{FindSpace}.
+    \end{itemize}
+
+    \item \textbf{Marcos de Coordenadas de Referencia (TF2)}:
+    \begin{itemize}
+        \item \path{map}: Marco inercial global para navegación SLAM y persistencia de entidades en el estado del mundo.
+        \item \path{base_link}: Centro geométrico del robot utilizado para comprobaciones de alcanzabilidad y prismas de trabajo.
+        \item \path{left_gripper_marker} y \path{right_gripper_marker}: Marcadores físicos en los efectores finales para la aproximación fina por servovisual en \texttt{Take}.
+        \item \path{table_drop_start}, \path{container_drop_start} y \path{shelf_drop_start}: Transformaciones dinámicas temporales calculadas por \texttt{FindSpace} y consumidas por \texttt{Drop} para la colocación segura.
+    \end{itemize}
 \end{itemize}
 
 % ------------------------------------------------------------
