@@ -7,9 +7,9 @@ La arquitectura de software de \emph{Justina}, robot de servicio doméstico del 
     \item \textbf{Módulos especializados}: Proporcionan capacidades específicas (\emph{Knowledge}, \emph{HRI}, \emph{Vision}, \emph{Navigation}, \emph{Manipulation} y \emph{Hardware}).
 \end{itemize}
 
-El procesamiento se distribuye en dos computadoras que forman parte del mismo grafo de ROS 2, comunicadas mediante el middleware CycloneDDS sobre una red Ethernet dedicada.
+El procesamiento se distribuye en dos computadoras que forman parte del mismo grafo de ROS 2, comunicadas mediante una red Ethernet dedicada.
 
-La \textbf{computadora principal} ejecuta los nodos \path{door_detector}, \path{scanner}, \path{depth_image_proc} y el driver de cámara RGB-D (\path{openni2_camera}), pertenecientes al módulo de \nameref{app:justina_hardware}, además de todos los módulos de alto nivel: \nameref{app:justina_executor}, \nameref{app:justina_hri}, \nameref{app:justina_knowledge}, \nameref{app:justina_manipulation}, \nameref{app:justina_navigation}, \nameref{app:justina_planning}, \nameref{app:justina_supervisor}, \nameref{app:justina_vision}.
+La \textbf{computadora principal} ejecuta los nodos \path{door_detector}, \path{scanner}, \path{depth_to_pointcloud} y el driver de cámara RGB-D (\texttt{openni2\_camera}), pertenecientes al módulo de \nameref{app:justina_hardware}, además de todos los módulos de alto nivel: \nameref{app:justina_executor}, \nameref{app:justina_hri}, \nameref{app:justina_knowledge}, \nameref{app:justina_manipulation}, \nameref{app:justina_navigation}, \nameref{app:justina_planning}, \nameref{app:justina_supervisor}, \nameref{app:justina_vision}.
 
 La \textbf{computadora embebida en la base Robotino 4 (FESTO)} (repositorio \texttt{Robotino}) ejecuta los drivers de la base, cabeza, torso, brazos y pinzas y el panel de operación \texttt{gui}, documentado en la sección de \nameref{app:justina_hri}.
 
@@ -877,20 +877,23 @@ Paquetes complementarios para la configuración cinemática y solvers de cinemá
 \section[Hardware]{Hardware}
 \label{app:justina_hardware}
 
-El módulo de \textit{Hardware} abstrae los dispositivos conectados al robot y expone las interfaces requeridas con el namespace \texttt{/hardware} para que otros módulos reciban información del sistema o envíen comandos de ejecución. El hardware del robot se compone por cabeza, torso, brazos, pinzas, base omnidireccional, cámara RGB-D y LiDAR.
+El módulo de \textit{Hardware} abstrae los dispositivos conectados al robot y expone las interfaces requeridas con el namespace \texttt{/hardware} para que otros módulos reciban información del sistema o envíen comandos de movimiento. El hardware del robot se compone por cabeza, torso, brazos, pinzas, base omnidireccional, cámara RGB-D y LiDAR.
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{hardware\_tools}}
-Implementa la clase Hardware, bajo el patrón \textit{Facade}, como biblioteca  para encapsular en llamadas síncronas los servicios de ROS 2 para el torso, cabeza, brazos, pinzas, base y detección de puerta. Adicionalmente, aloja el archivo \texttt{hardware.launch.xml}, responsable de iniciar los nodos del módulo que se ejecutan en la computadora principal.
+
+Implementa la clase \texttt{Hardware} como biblioteca para encapsular en llamadas
+síncronas los servicios de ROS 2 en los métodos \texttt{MoveTorso}, \texttt{MoveHead}, \texttt{MoveRight\allowbreak Arm}, \texttt{MoveLeft\allowbreak Arm}, \texttt{MoveRight\allowbreak Gripper}, \texttt{MoveLeft\allowbreak Gripper}, \texttt{MoveBase}, \texttt{CheckDoor\allowbreak State}, \texttt{Check\allowbreak Door}, \texttt{GetCurrent\allowbreak Pose} y \texttt{LookAt}. Adicionalmente, aloja el archivo \texttt{hardware.launch.xml}, responsable de iniciar los nodos del módulo que se ejecutan en la computadora principal.
 
 % ------------------------------------------------------------
 
 \subsection{Paquete \texttt{justina\_description}}
 
-Proporciona un modelo estructural del robot, incluyendo la jerarquía de eslabones y sus relaciones mediante diferentes tipos de juntas. Permite visualizar su estado durante la ejecución. Además, contiene los nodos descritos a continuación.
+Proporciona un modelo estructural del robot en el archivo URDF, incluyendo la jerarquía de eslabones y sus relaciones mediante diferentes tipos de juntas. Permite visualizar su estado durante la ejecución. Contiene, además, los nodos descritos a continuación.
 
 \begin{enumerate}
 
+%% ISSUE: No cumple con la nomenclatura %%
 \item \textbf{simple\_justina\_sim}: \\
 Simulador ligero que sustituye a los \textit{drivers} reales: integra la velocidad comandada, publica odometría, TF \texttt{odom a base\_link}, articulaciones falsas y un láser simulado; implementa directamente los servicios de movimiento de cabeza, torso y brazos.
 
@@ -915,12 +918,13 @@ Simulador ligero que sustituye a los \textit{drivers} reales: integra la velocid
         \texttt{/navigation/initialpose} (\texttt{geometry\_msgs/PoseWithCovarianceStamped})
 
     \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/hardware/head/move\_head} \\
-        \texttt{/hardware/torso/move\_torso} \\
-        \texttt{/hardware/arms/move\_left\_arm} \\
-        \texttt{/hardware/arms/move\_right\_arm}
+        \texttt{/hardware/head/move\_head} (\texttt{head\_interfaces/srv/MoveHead}) \\
+        \texttt{/hardware/torso/move\_torso} (\texttt{torso\_interfaces/srv/MoveTorso}) \\
+        \texttt{/hardware/arms/move\_left\_arm} (\texttt{arms\_interfaces/srv/MoveArms}) \\
+        \texttt{/hardware/arms/move\_right\_arm} (\texttt{arms\_interfaces/srv/MoveArms})
 \end{itemize}
 
+%% ISSUE: Ya no se utiliza %%
 \item \textbf{kinect\_tilt\_motor\_node}: \\
 Refleja el \textit{tilt} de cabeza comandado hacia el motor físico de inclinación del Kinect v1 vía USB; sólo se lanza de forma opcional cuando la variable \texttt{use\_kinect} está activa.
 
@@ -929,8 +933,9 @@ Refleja el \textit{tilt} de cabeza comandado hacia el motor físico de inclinaci
         \texttt{/hardware/head/current\_pose} (\texttt{std\_msgs/Float32MultiArray})
 \end{itemize}
 
+%% ISSUE: No cumple con la nomenclatura %%
 \item \textbf{depth\_to\_pointcloud}: \\
-Utilidad de depuración que convierte una imagen de profundidad y su \texttt{camera\_info} en una nube de puntos (\texttt{sensor\_msgs/PointCloud2}). No forma parte del \textit{pipeline} principal de percepción.
+Utilidad para el entorno de simulación WeBots que convierte una imagen de profundidad y su \texttt{camera\_info} en una nube de puntos (\texttt{sensor\_msgs/PointCloud2}).
 
 \end{enumerate}
 
@@ -948,19 +953,19 @@ Determina si una puerta está abierta o cerrada comparando la distancia promedio
         \texttt{/hardware/base/scan} (\texttt{sensor\_msgs/LaserScan})
 
     \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/hardware/door\_detector/check}
+        \texttt{/hardware/door\_detector/check} (\texttt{std\_srvs/srv/Trigger})
 \end{itemize}
 
 \end{enumerate}
 
 \subsection{Paquete \texttt{scanner}}
 
-Sigue con la cabeza un punto de intéres establecido por el módulo de visión.
+Fija la cabeza en dirección al punto de intéres establecido por el módulo de visión.
 
 \begin{enumerate}
 
 \item \textbf{head\_control\_node}: \\
-Publica la posición de la cabeza en función de un punto 3D de interés publicado por \texttt{Hardware::LookAt}. Calcula pan/tilt vía TF entre el marco de la cámara/cuello y el objetivo, respetando límites articulares y una zona muerta para evitar micro-movimientos. Reacciona además al estado de navegación para evitar mover la cabeza en fases críticas.
+Publica la posición de la cabeza en función de un punto 3D de interés publicado en \texttt{/hardware/head/look\_at}. Calcula pan/tilt vía TF entre el marco de la cámara/cuello y el objetivo, respetando límites articulares y una zona muerta para evitar micro-movimientos. Reacciona además al estado de navegación para evitar mover la cabeza en fases críticas.
 
 \begin{itemize}
     \item \textbf{Tópicos publicados}: \\
@@ -1004,26 +1009,26 @@ Driver principal de la base Robotino 4. Conecta por TCP/IP al servidor \textit{R
         \texttt{/hardware/base/set\_digital\_values} (\texttt{std\_msgs/BoolMultiArray})
 
     \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/hardware/base/cmd\_vel\_enable} \\
-        \texttt{/hardware/base/set\_velocity\_limits} \\
-        \texttt{/hardware/base/set\_encoder\_position}.
+        \texttt{/hardware/base/cmd\_vel\_enable} (\texttt{base\_interfaces/srv/Set\allowbreak Omni\allowbreak Drive\allowbreak Enabled}) \\
+        \texttt{/hardware/base/set\_velocity\_limits} (\texttt{base\_interfaces/srv/Set\allowbreak Vel\allowbreak Limits}) \\
+        \texttt{/hardware/base/set\_encoder\_position} (\texttt{base\_interfaces/srv/Set\allowbreak Encoder\allowbreak Position})
 \end{itemize}
 
 \item \textbf{robotino\_odometry\_node}:
 
-Calcula y publica la odometría de la base a partir de las lecturas del driver, operando como un ejecutable independiente del nodo principal; difunde también la TF \texttt{odom a base\_link} si \texttt{launch\_odom\_tf} está activo.
+Calcula y publica la odometría de la base a partir de las lecturas del driver, operando como un ejecutable independiente del nodo principal; publica la TF \texttt{odom} si \texttt{publish\_odom\_tf} está activo.
 
 \begin{itemize}
     \item \textbf{Tópicos publicados}: \\
         \texttt{/hardware/base/odom} (\texttt{nav\_msgs/Odometry})
     
     \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/hardware/base/reset\_odometry}
+        \texttt{/hardware/base/reset\_odometry} (\texttt{base\_interfaces/srv/Reset\allowbreak Odometry})
 \end{itemize}
 
 \item \textbf{digital\_stop\_node}:
 
-Mapea el estado de la entrada digital física (índice 6 del arreglo, conectada al botón de paro) a la señal de alto que consumen navegación, brazos, cabeza y pinzas.
+Mapea el estado de la entrada digital física (DI7 del arreglo, conectada al botón de paro) a la señal de alto que consumen navegación, brazos, cabeza y pinzas.
 
 \begin{itemize}
     \item \textbf{Tópicos publicados}: \\
@@ -1056,12 +1061,12 @@ Controla los 2 servomotores Dynamixel de pan/tilt de la cabeza vía RS-485 media
         \texttt{/navigation/navigation\_ctrl/stop} (\texttt{std\_msgs/Bool})
 
     \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/hardware/head/move\_head}
+        \texttt{/hardware/head/move\_head} (\texttt{head\_interfaces/srv/MoveHead})
 \end{itemize}
 
 \end{enumerate}
 
-\subsection{Paquete \texttt{head}}
+\subsection{Paquete \texttt{torso}}
 
 Proporciona el driver para el control de posición del torso.
 
@@ -1081,14 +1086,14 @@ Controla el eje lineal del torso mediante un controlador Jrk (Pololu) sobre el p
         \texttt{/hardware/torso/goal\_pose} (\texttt{std\_msgs/Float32MultiArray})
     
     \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/hardware/torso/move\_torso}
+        \texttt{/hardware/torso/move\_torso} (\texttt{torso\_interfaces/srv/MoveTorso})
 \end{itemize}
 
 \end{enumerate}
 
 \subsection{Paquete \texttt{arms}}
 
-Proporciona los drivers para el posicionamiento de los manipuladores del robot.
+Proporciona los drivers para el control de posición y velocidad de los manipuladores del robot.
 
 \begin{enumerate}
 
@@ -1111,8 +1116,8 @@ Controla los 6 servomotores Dynamixel de cada brazo sobre bus RS-485. El mismo n
         \texttt{/navigation/navigation\_ctrl/stop} (\texttt{std\_msgs/Bool})
     
     \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/hardware/arms/move\_left\_arm} \\
-        \texttt{/hardware/arms/move\_right\_arm}
+        \texttt{/hardware/arms/move\_left\_arm} (\texttt{arms\_interfaces/srv/MoveArms}) \\
+        \texttt{/hardware/arms/move\_right\_arm} (\texttt{arms\_interfaces/srv/MoveArms})
 \end{itemize}
 
 \end{enumerate}
@@ -1136,8 +1141,8 @@ Controla las pinzas mediante comunicación TCP/IP hacia un microcontrolador RP23
         \texttt{/navigation/navigation\_ctrl/stop} (\texttt{std\_msgs/Bool})
     
     \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/hardware/grippers/move\_left\_gripper} \\
-        \texttt{/hardware/grippers/move\_right\_gripper}.
+        \texttt{/hardware/grippers/move\_left\_gripper} (\texttt{grippers\_interfaces/srv/Move\allowbreak Grippers}) \\
+        \texttt{/hardware/grippers/move\_right\_gripper} (\texttt{grippers\_interfaces/srv/Move\allowbreak Grippers})
 \end{itemize}
 
 \end{enumerate}
