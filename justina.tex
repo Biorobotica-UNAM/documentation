@@ -7,7 +7,7 @@ La arquitectura de software de \emph{Justina}, robot de servicio doméstico del 
     \item \textbf{Módulos especializados}: Proporcionan capacidades específicas (\emph{Knowledge}, \emph{HRI}, \emph{Vision}, \emph{Navigation}, \emph{Manipulation} y \emph{Hardware}).
 \end{itemize}
 
-Estos módulos se ejecutan en dos computadoras comunicadas vía Ethernet, formando un único grafo de ROS~2. La computadora portátil, montada en un soporte dedicado detrás del torso y sobre la base móvil, concentra prácticamente todos los paquetes; la computadora embebida, en cambio, únicamente alberga paquetes de control de sensores, actuadores y la interfaz gráfica. La estructura de cada módulo, especificando sus paquetes, nodos e interfaces de comunicación, se documenta a continuación.
+Estos módulos se ejecutan en dos computadoras comunicadas vía Ethernet, formando un único grafo de ROS~2. La computadora portátil, montada en un soporte dedicado detrás del torso y sobre la base móvil, concentra prácticamente todos los paquetes; la computadora embebida, en cambio, únicamente alberga algunos paquetes de control de \emph{Hardware} y la interfaz de \emph{HRI}. La estructura de cada módulo, especificando sus paquetes, nodos e interfaces de comunicación, se documenta a continuación.
 
 % ============================================================
 % PLANNING
@@ -818,12 +818,12 @@ Proporciona las utilidades del módulo. Incluye la biblioteca \texttt{Manipulati
 	Recorta la nube de puntos de la cámara a una región de interés y reduce su densidad por \textit{voxelización}. Publica el resultado para alimentar el OctoMap de MoveIt2 y se habilita bajo demanda.
     \begin{itemize}
         \item \textbf{Tópicos publicados}: \\
-        \texttt{/manipulation/camera/points\_filtered} \\
-		\texttt{/manipulation/cloud\_filter/debug\_markers}
+        \texttt{/manipulation/camera/points\_filtered} (\texttt{sensor\_msgs/PointCloud2}) \\
+		\texttt{/manipulation/cloud\_filter/debug\_markers} (\texttt{visualization\_msgs/MarkerArray})
         \item \textbf{Tópicos suscritos}: \\
-        \texttt{/hardware/camera/points}
+        \texttt{/hardware/camera/points} (\texttt{sensor\_msgs/PointCloud2})
         \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/manipulation/cloud\_filter/enable}
+        \texttt{/manipulation/cloud\_filter/enable} (\texttt{std\_srvs/SetBool})
     \end{itemize}
 \end{enumerate}
 
@@ -836,13 +836,13 @@ Expone el servicio de planeación cinemática encapsulando MoveIt2.
 	Recibe una pose objetivo para el efector final y determina el tipo de agarre, \textit{pinch} o envolvente, según el \textit{tip link} especificado. Solicita la trayectoria a MoveIt2 mediante RRTConnect a partir del estado publicado en \texttt{/hardware/joint\_states} y, opcionalmente, coordina el filtrado de nube de puntos, la limpieza del OctoMap y la exclusión del objeto objetivo como obstáculo.
     \begin{itemize}
         \item \textbf{Tópicos suscritos}: \\
-        \texttt{/hardware/joint\_states}
+        \texttt{/hardware/joint\_states} (\texttt{sensor\_msgs/JointState})
         \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/manipulation/manipulation\_planner/plan\_trajectory}
+        \texttt{/manipulation/manipulation\_planner/plan\_trajectory} (\texttt{manipulation\_planner\_interfaces/PlanTrajectory})
         \item \textbf{Servicios utilizados}: \\
-        \texttt{/manipulation/plan\_kinematic\_path} \\
-		\texttt{/manipulation/cloud\_filter/enable} \\
-		\texttt{/manipulation/clear\_octomap}
+        \texttt{/manipulation/plan\_kinematic\_path} (\texttt{moveit\_msgs/GetMotionPlan}) \\
+		\texttt{/manipulation/cloud\_filter/enable} (\texttt{std\_srvs/SetBool}) \\
+		\texttt{/manipulation/clear\_octomap} (\texttt{std\_srvs/Empty})
     \end{itemize}
 \end{enumerate}
 
@@ -855,11 +855,11 @@ Expone el servicio de control de trayectorias utilizando los servicios de Hardwa
     Recibe una trayectoria y la descompone en \textit{waypoints} integrados por posiciones del torso y las seis articulaciones del brazo correspondiente, enviándolos en paralelo a los nodos de hardware y coordinando la ejecución bloque por bloque.
     \begin{itemize}
         \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/manipulation/manipulation\_controller/follow\_trajectory}
+        \texttt{/manipulation/manipulation\_controller/follow\_trajectory} (\texttt{manipulation\_controller\_interfaces/FollowTrajectory})
         \item \textbf{Servicios utilizados}: \\
-        \texttt{/hardware/arms/move\_right\_arm} \\
-		\texttt{/hardware/arms/move\_left\_arm} \\
-		\texttt{/hardware/torso/move\_torso}
+        \texttt{/hardware/arms/move\_right\_arm} (\texttt{arms\_interfaces/MoveArms}) \\
+		\texttt{/hardware/arms/move\_left\_arm} (\texttt{arms\_interfaces/MoveArms}) \\
+		\texttt{/hardware/torso/move\_torso} (\texttt{torso\_interfaces/MoveTorso})
     \end{itemize}
 \end{enumerate}
 
