@@ -494,7 +494,7 @@ Panel de operación en interfaz gráfica (PyQt) ejecutado en la computadora de l
 \section[Vision]{Vision}
 \label{app:justina_vision}
 
-El módulo \textit{Vision} gestiona la percepción visual del robot: detección de objetos 2D/3D (YOLO y OWLv2), analítica sobre detecciones (conteo, tamaño, color, comparación), reconocimiento e identificación facial, detección de asientos vacíos, alineación con mesas y localización de espacios de entrega (mesa/repisa/contenedor) para manipulación. Expone estas capacidades mediante la fachada \texttt{vision\_tools}. Es uno de los módulos con más nodos activos simultáneamente (14, todos bajo el \textit{namespace} \texttt{/vision}).
+El módulo \textit{Vision} implementa la capa de percepción visual del robot a traves de un stack de x nodos ROS~2 bajo el \textit{namespace} \texttt{/vision}. Las responsabilidades del módulo incluyen detección de objetos(usando un modelo de visión por computador(YOLO) y otro modelo de inteligencia artificial especializado en la detección de objetos de vocabulario abierto (OWLv2)), reconocimiento facial(usando modelos modernos de aprendizaje profundo integrados en OpenCV (YuNet y SFace)), analítica de imágenes y conversión de coordenadas 2D a 3D. La librería \texttt{vision\_tools} encapsula la interacción con los servicios de visión mediante llamadas síncronas.
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{vision\_tools} (Librería cliente y launch raíz)}
@@ -505,117 +505,119 @@ Librería \textit{Facade} (clase \texttt{Vision}) que encapsula en llamadas sín
     Combina detección YOLO y conversión a pose 3D para determinar si hay un asiento libre frente al robot.
     \begin{itemize}
         \item \textbf{Tópicos publicados}: \\
-        \texttt{/vision/detect\_seats/debug\_image} (\texttt{sensor\_msgs/Image}).
+        \texttt{/vision/detect\_seats/debug\_image} (\texttt{sensor\_msgs/Image})
         \item \textbf{Tópicos suscritos}: \\
-        Imagen de la cámara (parámetro \texttt{image\_topic}).
+        \texttt{/hardware/camera/image\_raw} (\texttt{sensor\_msgs/msg/Image})
         \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/vision/find\_seat}.
+        \texttt{/vision/find\_seat} (\texttt{vision\_interfaces/srv/FindSeat})
         \item \textbf{Servicios utilizados}: \\
-        \texttt{/vision/detection}, \texttt{/vision/bbox\_to\_pose}.
-    \end{itemize}
-
-    \item \textbf{Detect\_Fusion\_Node} (\texttt{detect\_fusion\_node}): \\
-    Selecciona un detector 2D (YOLO u OWLv2), obtiene el \textit{bounding box} de la clase solicitada y lo convierte a pose 3D vía \texttt{pc\_bbox\_pose}. \\
-    \textbf{Nota de integración}: Ofrece el servicio como \texttt{/detect\_by\_class}, mientras que la fachada \texttt{Vision::DetectByClass()} invoca \texttt{/vision/detect\_by\_class}; debido a este desfase de prefijo, la llamada síncrona desde la fachada no encuentra servidor en la configuración actual.
-    \begin{itemize}
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/detect\_by\_class}.
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{/vision/detection}, \texttt{/vision/owl/owlv2\_service}, \texttt{/vision/bbox\_to\_pose}.
-    \end{itemize}
-
-    \item \textbf{image\_fixed\_node} (\texttt{hsr\_image\_enhancer}): \\
-    Aplica balance de blancos y realce a la imagen de la cámara del HSR/Takeshi. En la plataforma real con base Robotino y cámara \texttt{openni2\_camera}, este nodo permanece inactivo al no recibir datos en el tópico de origen.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/hardware/camera/image\_raw}.
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{/head\_rgbd\_sensor/rgb/image\_rect\_color}.
+        \texttt{/vision/detection} (\texttt{vision\_interfaces/srv/GetDetections}) \\
+        \texttt{/vision/bbox\_to\_pose} (\texttt{vision\_interfaces/srv/BBoxToPose}) \\
     \end{itemize}
 \end{enumerate}
 
 % ------------------------------------------------------------
-\subsection{Paquete \texttt{object\_recognizer} (Paquetes \texttt{yolo\_detect}, \texttt{owlv2\_detect} y \texttt{pc\_bbox\_pose})}
-Conjunto de tres paquetes ROS orientados a la detección 2D/3D y analítica visual de objetos.
+% AQUI VOY
+\subsection{Paquete \texttt{yolo\_detect}}
 
 \begin{enumerate}
     \item \textbf{yolo\_detect\_node} (paquete \texttt{yolo\_detect}): \\
-    Ejecuta YOLO11 sobre la imagen de entrada para publicar la lista continua de objetos o responder a peticiones bajo demanda.
+    Ejecuta YOLO11s sobre la imagen de entrada para publicar la lista continua de objetos detectados o responder a peticiones bajo demanda.
     \begin{itemize}
         \item \textbf{Tópicos publicados}: \\
-        \texttt{/vision/detections\_list} (consumido por \texttt{person\_tracker} de HRI).
+        \texttt{/vision/detections\_list} (\texttt{vision\_interfaces/msg/YoloDetections}) 
         \item \textbf{Tópicos suscritos}: \\
-        Imagen de la cámara, \texttt{/vision/enable\_continuous} (\texttt{std\_msgs/Bool}).
+        \texttt{/vision/enable\_continuous} (\texttt{std\_msgs/msg/Bool}). \\
+        \texttt{/hardware/camera/image\_raw} (\texttt{sensor\_msgs/msg/Image}).
         \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/vision/detection}, \texttt{/vision/enable\_continuous}.
+        \texttt{/vision/detection} (\texttt{vision\_interfaces/srv/GetDetections}). \\
+        \texttt{/vision/enable\_continuous} (\texttt{std\_msgs/srv/SetBool}).
+        \item \textbf{Servicios utilizados}: \\
+        \texttt{/vision/bbox\_to\_pose} (\texttt{vision\_interfaces/srv/BBoxToPose}).
     \end{itemize}
+\end{enumerate}
 
-    \item \textbf{owlv2\_detect\_node} (\texttt{owl\_server}, paquete \texttt{owlv2\_detect}): \\
-    Ejecuta el modelo OWLv2 para detección de vocabulario abierto basada en texto (\textit{queries}).
+\subsection{Paquete \texttt{OWL\_detect}}
+
+\begin{enumerate}
+    \item \textbf{OWL\_service} (paquete \texttt{owlv2\_detect}):\\
+    Ejecuta el modelo OWLv2 (ViT's) para detección de vocabulario abierto basada en texto (\textit{queries}).
     \begin{itemize}
         \item \textbf{Tópicos publicados}: \\
-        \texttt{/vision/detections}, \texttt{/vision/owl/debug\_image}.
+        \texttt{/vision/detections} (\texttt{vision\_interfaces/msg/YoloDetections}). \\
+        \texttt{/vision/owl/debug\_image} (\texttt{sensor\_msgs/msg/Image}).
         \item \textbf{Tópicos suscritos}: \\
-        Imagen de la cámara.
+        \texttt{/hardware/camera/image\_raw} (\texttt{sensor\_msgs/msg/Image}).
         \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/vision/owl/owlv2\_service}.
+        \texttt{/vision/owl/owlv2\_service} (\texttt{vision\_interfaces/srv/GetDetections}).
         \item \textbf{Servicios utilizados}: \\
-        \texttt{/vision/bbox\_to\_pose}.
+        \texttt{/vision/bbox\_to\_pose} (\texttt{vision\_interfaces/srv/BBoxToPose}).
     \end{itemize}
 
-    \item \textbf{Analize\_node} (\texttt{vision\_analytic\_service}, paquete \texttt{owlv2\_detect}): \\
-    Realiza analítica sobre las detecciones de OWLv2 (conteo con seguimiento IoU, filtrado por tamaño, color y comparación). \\
-    \textbf{Nota de despliegue}: El paquete instala además \texttt{Analize\_Human\_node} (servidor de \texttt{/vision/analyze\_person}), pero este no es lanzado en \texttt{vision.launch.xml}, dejando sin backend activo a \texttt{Vision::AnalyzePerson()}.
-    \begin{itemize}
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{/vision/detections}.
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/vision/count\_objects}, \texttt{/vision/get\_by\_size}, \texttt{/vision/get\_by\_color}, \texttt{/vision/compare\_count}.
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{/vision/owl/owlv2\_service}.
-    \end{itemize}
+        \item \textbf{Analize\_node} (\texttt{vision\_analytic\_service}, paquete \texttt{owlv2\_detect}): \\
+        Realiza analítica sobre las detecciones de OWLv2 (conteo con seguimiento IoU, filtrado por tamaño, color y comparación), cada operación válida solicita detecciones a OWLv2 antes de analizarlas. El conteo devuelto en class\_count corresponde a los objetos de la consulta actual, aunque el nodo también mantiene un historial interno de IDs.
+        \begin{itemize}
+            \item \textbf{Tópicos suscritos}: \\
+            \texttt{/vision/detections} (\texttt{vision\_interfaces/msg/YoloDetections}).
+            \item \textbf{Servicios ofrecidos}: \\
+            \texttt{/vision/count\_objects}, \texttt{/vision/get\_by\_size}, \texttt{/vision/get\_by\_color}, \texttt{/vision/compare\_count} (\texttt{vision\_interfaces/srv/GetAnalytics}). \\
+            Los cuatro servicios comparten el mismo callback: la operación realmente ejecutada depende de request.action, no del nombre del servicio invocado, es decir:
+            \begin{itemize}
+                \item \texttt{count\_objects} $\rightarrow$ request.action = count 
+                \item \texttt{get\_by\_size} $\rightarrow$ request.action = size 
+                \item \texttt{get\_by\_color} $\rightarrow$ request.action = color 
+                \item \texttt{compare\_count} $\rightarrow$ request.action = compare
+            \end{itemize}
+            \item \textbf{Servicios utilizados}: \\
+            \texttt{/vision/owl/owlv2\_service} (\texttt{vision\_interfaces/srv/GetDetections}).
+        \end{itemize}
+\end{enumerate}
 
+\subsection{Paquete \texttt{pc\_bbox\_pose}}
+
+\begin{enumerate}
     \item \textbf{pc\_bbox\_pose\_node} (paquete \texttt{pc\_bbox\_pose}): \\
     Procesa un \textit{bounding box} 2D junto con la nube de puntos 3D para estimar la pose tridimensional de un objeto.
     \begin{itemize}
         \item \textbf{Tópicos suscritos}: \\
-        Nube de puntos de la cámara (parámetro \texttt{pointcloud\_topic}).
+        Nube de puntos de la cámara (parámetro \texttt{pointcloud\_topic}).\\
+        \texttt{/hardware/camera/points} (\texttt{sensor\_msgs/msg/PointCloud2}). \\
+        \texttt{/tf} y \texttt{/tf\_static} (\texttt{tf2\_msgs/msg/TFMessage}).
         \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/vision/bbox\_to\_pose}.
+        \texttt{/vision/bbox\_to\_pose} (\texttt{vision\_interfaces/srv/BboxToPose}).
     \end{itemize}
 \end{enumerate}
 
 % ------------------------------------------------------------
-\subsection{Paquete \texttt{face\_recognizer} (Paquete ROS \texttt{face\_recog})}
-Percepción facial para detección, identificación, descripción y registro de personas.
-
+\subsection{Paquete \texttt{face\_recog}}
 \begin{enumerate}
-    \item \textbf{face\_recog\_node} (\texttt{faceFlorence} / \texttt{face\_service\_node}): \\
-    Implementa el pipeline completo de rostro utilizando el modelo Florence-2. Los ejecutables heredados \texttt{face} y \texttt{facev2} se conservan en el paquete pero no son lanzados.
+    \item \textbf{face\_recogFlorence2 }: \\
+    Percepción facial para detección, identificación, descripción y registro de personas. Implementa el pipeline completo de rostro utilizando el modelo Florence-2.
     \begin{itemize}
         \item \textbf{Tópicos publicados}: \\
-        \texttt{/face\_recog/debug\_image} (\texttt{sensor\_msgs/Image}).
+        \texttt{/face\_recog/debug\_image} (\texttt{sensor\_msgs/msg/Image}).
         \item \textbf{Tópicos suscritos}: \\
-        Imagen RGB y \texttt{camera\_info} de la cámara.
+        \texttt{/hardware/camera/image\_raw} (\texttt{sensor\_msgs/msg/Image}).
+        \texttt{/camera/rgb/camera\_info} (\texttt{sensor\_msgs/msg/CameraInfo}).
         \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/vision/detect\_person}, \texttt{/vision/identify\_person}, \texttt{/vision/describe\_person}, \texttt{/vision/register\_person}.
+        \texttt{/vision/detect\_person}, \texttt{/vision/identify\_person}, \texttt{/vision/describe\_person}, \texttt{/vision/register\_person} (\texttt{faces\_interfaces/srv/FaceRecog}).
     \end{itemize}
 \end{enumerate}
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{table\_alignment}}
-Estimación de la geometría de superficies planas para aproximación del robot.
-
 \begin{enumerate}
     \item \textbf{table\_segmenter\_node}: \\
-    Segmenta la nube de puntos para encontrar el plano de una mesa (redonda o rectangular) y calcula el ángulo de alineación con su borde.
+    Estimación de la geometría de superficies planas para aproximación del robot. Segmenta la nube de puntos para encontrar el plano de una mesa (redonda o rectangular) y calcula el ángulo de alineación con su borde.
     \begin{itemize}
         \item \textbf{Tópicos publicados}: \\
-        Nube de puntos segmentada, ángulo de alineación (\texttt{std\_msgs/Float64}), marcadores de visualización para RViz.
+        \texttt{/vision/camera/table\_points} (\texttt{sensor\_msgs/PointCloud2}).\\
+        \texttt{/vision/camera/table\_alignment} (\texttt{std\_msgs/msg/Float64}).\\
+        \texttt{/vision/camera/table\_axes\_markers} (visualization\_msgs/msg/MarkerArray).
         \item \textbf{Tópicos suscritos}: \\
-        Nube de puntos de la cámara.
+        \texttt{/hardware/camera/points} (\texttt{sensor\_msgs/msg/PointCloud2}).
         \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/vision/get\_table\_alignment}.
+        \texttt{/vision/get\_table\_alignment} (\texttt{vision\_interfaces/srv/GetTableAlignment}).
     \end{itemize}
 \end{enumerate}
 
@@ -624,19 +626,26 @@ Estimación de la geometría de superficies planas para aproximación del robot.
 Localización de zonas despejadas para tareas de manipulación y depósito sobre mesas, repisas o contenedores.
 
 \begin{enumerate}
-    \item \textbf{vacancy\_cloud\_filter} (\texttt{vacancy\_cloud\_filter\_node}): \\
+    \item \textbf{vacancy\_cloud\_filter\_node}: \\
     Filtro ROI compartido que recorta la nube de puntos y suspende temporalmente los filtros de navegación mientras la detección de espacio está activa.
     \begin{itemize}
         \item \textbf{Tópicos publicados}: \\
-        \texttt{/vision/vacancy/points\_filtered}, habilitación de campos potenciales en navegación.
+        \texttt{/vision/vacancy/points\_filtered} (\texttt{sensor\_msg/msg/PointCloud2}) habilitación de campos potenciales en navegación. \\
+        \textsl{/navigation/potential\_fields/enable} (\texttt{std\_msgs/msg/Bool}). \\
+        \textsl{/navigation/potential\_fields/enable\_cloud} (\texttt{std\_msgs/msg/Bool}).
         \item \textbf{Tópicos suscritos}: \\
-        Nube de puntos de la cámara.
+        \texttt{/hardware/camera/points} (\texttt{sensor\_msgs/PointCloud2}).
         \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/vision/vacancy\_cloud\_filter/enable}.
+        \texttt{/vision/vacancy\_cloud\_filter/enable} (\texttt{std\_srvs/SetBool}).
         \item \textbf{Servicios utilizados}: \\
-        Servicio de habilitación del filtro de obstáculos de \textit{Navigation}.
+        Servicios de habilitación del filtro de obstáculos de \texttt{Navigation}.\\
+        \texttt{/navigation/cloud\_filter/enable} (\texttt{std\_srvs/SetBool}). \\
+        \texttt{/navigation/obstacle\_detector/get\_parameters} \\
+        (\texttt{rcl\_interfaces/srv/GetParameters}). \\
+        \texttt{/navigation/obstacle\_detector/set\_parameters}\\ 
+        (\texttt{rcl\_interfaces/srv/SetParameters}).
     \end{itemize}
-
+%AQUI VOY 11/09/26
     \item \textbf{table\_drop\_tf\_node} / \textbf{shelf\_drop\_tf\_node} / \textbf{container\_drop\_tf\_node}: \\
     Calculan puntos libres para la colocación de objetos en mesas, estantes (detectando planos horizontales) y contenedores (acotando la región vía OWLv2). Publican los marcos de referencia resultantes como transformaciones TF (\texttt{table\_frame}, \texttt{shelf\_frame}, \texttt{container\_frame}) y sus aproximaciones (\texttt{*\_drop\_start}).
     \begin{itemize}
