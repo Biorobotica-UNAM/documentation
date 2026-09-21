@@ -1,17 +1,11 @@
 \label{app:justina}
 
-La arquitectura de software de \emph{Justina}, robot de servicio doméstico del Laboratorio de Bio-Robótica de la UNAM, se implementa sobre ROS~2 y divide los módulos que la conforman en dos categorías:
+La arquitectura de software de \emph{Justina}, robot de servicio doméstico del Laboratorio de Bio-Robótica de la UNAM, se implementa sobre ROS~2 y distribuye sus paquetes en dos categorías de módulos:
 
 \begin{itemize}
     \item \textbf{Módulos orquestadores}: Administran la operación autónoma (\emph{Planning}, \emph{Supervisor} y \emph{Executor}).
     \item \textbf{Módulos especializados}: Proporcionan capacidades específicas (\emph{Knowledge}, \emph{HRI}, \emph{Vision}, \emph{Navigation}, \emph{Manipulation} y \emph{Hardware}).
 \end{itemize}
-
-El procesamiento se distribuye en dos computadoras que forman parte del mismo grafo de ROS 2, comunicadas mediante una red Ethernet dedicada.
-
-La \textbf{computadora principal} ejecuta los nodos \path{door_detector}, \path{scanner}, \path{depth_to_pointcloud} y el driver de cámara RGB-D (\texttt{openni2\_camera}), pertenecientes al módulo de \nameref{app:justina_hardware}, además de todos los módulos de alto nivel: \nameref{app:justina_executor}, \nameref{app:justina_hri}, \nameref{app:justina_knowledge}, \nameref{app:justina_manipulation}, \nameref{app:justina_navigation}, \nameref{app:justina_planning}, \nameref{app:justina_supervisor}, \nameref{app:justina_vision}.
-
-La \textbf{computadora embebida en la base Robotino 4 (FESTO)} (repositorio \texttt{Robotino}) ejecuta los drivers de la base, cabeza, torso, brazos y pinzas y el panel de operación \texttt{gui}, documentado en la sección de \nameref{app:justina_hri}.
 
 La estructura de cada módulo, especificando sus paquetes, nodos e interfaces de comunicación, se documenta a continuación.
 
@@ -879,17 +873,22 @@ Paquetes complementarios para la configuración cinemática y solvers de cinemá
 
 El módulo de \textit{Hardware} abstrae los dispositivos conectados al robot y expone las interfaces requeridas con el namespace \texttt{/hardware} para que otros módulos reciban información del sistema o envíen comandos de movimiento. El hardware del robot se compone por cabeza, torso, brazos, pinzas, base omnidireccional, cámara RGB-D y LiDAR.
 
+Se encuentra alojado en la computadora principal, de modo que sea accesible a los módulos orquestadores.
+
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{hardware\_tools}}
 
-Implementa la clase \texttt{Hardware} como biblioteca para encapsular en llamadas
-síncronas los servicios de ROS 2 en los métodos \texttt{MoveTorso}, \texttt{MoveHead}, \texttt{MoveRight\allowbreak Arm}, \texttt{MoveLeft\allowbreak Arm}, \texttt{MoveRight\allowbreak Gripper}, \texttt{MoveLeft\allowbreak Gripper}, \texttt{MoveBase}, \texttt{CheckDoor\allowbreak State}, \texttt{Check\allowbreak Door}, \texttt{GetCurrent\allowbreak Pose} y \texttt{LookAt}. Adicionalmente, aloja el archivo \texttt{hardware.launch.xml}, responsable de iniciar los nodos del módulo que se ejecutan en la computadora principal.
+Implementa la clase \texttt{Hardware} como biblioteca para encapsular en llamadas síncronas los servicios de ROS 2 en los métodos \texttt{MoveTorso}, \texttt{MoveHead}, \texttt{MoveRight\allowbreak Arm}, \texttt{MoveLeft\allowbreak Arm}, \texttt{MoveRight\allowbreak Gripper}, \texttt{MoveLeft\allowbreak Gripper}, \texttt{MoveBase}, \texttt{CheckDoor\allowbreak State}, \texttt{Check\allowbreak Door}, \texttt{GetCurrent\allowbreak Pose} y \texttt{LookAt}. Adicionalmente, aloja el archivo \texttt{hardware.launch.xml}, responsable de iniciar los nodos del módulo que se ejecutan en la computadora principal.
+
+Se encuentra en la computadora principal para ser accesible para los módulos orquestradores.
 
 % ------------------------------------------------------------
 
 \subsection{Paquete \texttt{justina\_description}}
 
 Proporciona un modelo estructural del robot en el archivo URDF, incluyendo la jerarquía de eslabones y sus relaciones mediante diferentes tipos de juntas. Permite visualizar su estado durante la ejecución. Contiene, además, los nodos descritos a continuación.
+
+Se duplica byte a byte en la computadora principal.
 
 \begin{enumerate}
 
@@ -941,7 +940,7 @@ Utilidad para el entorno de simulación WeBots que convierte una imagen de profu
 
 \subsection{Paquete \texttt{door\_detector}}
 
-Determina si el robot tiene una puerta enfrente.
+Determina si el robot tiene una puerta enfrente. Se ejecuta en la computadora principal.
 
 \begin{enumerate}
 
@@ -960,7 +959,7 @@ Determina si una puerta está abierta o cerrada comparando la distancia promedio
 
 \subsection{Paquete \texttt{scanner}}
 
-Fija la cabeza en dirección al punto de intéres establecido por el módulo de visión.
+Fija la cabeza en dirección al punto de intéres establecido por el módulo de visión. Se ejecuta en la computadora principal.
 
 \begin{enumerate}
 
@@ -979,6 +978,7 @@ Publica la posición de la cabeza en función de un punto 3D de interés publica
 
 \end{enumerate}
 
+% ISSUE: La GUI se levanta bajo el namespace Hardware %%
 \subsection{Paquete \texttt{justina\_hardware}}
 
 \textit{Bringup} de la base Robotino. Bajo el \textit{namespace} \texttt{/hardware}, remapea los tópicos \texttt{joint\_states} relativos de cada driver al tópico canónico \texttt{/hardware/joint\_states}, incluye los \textit{launches} de los subcomponentes, ejecuta la GUI del panel de operación y levanta un \texttt{robot\_state\_publisher} local con entrada remapeada a \path{/manipulation/joint_states}.
