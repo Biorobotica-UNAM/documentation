@@ -871,163 +871,315 @@ Paquetes complementarios para la configuración cinemática y solvers de cinemá
 \section[Hardware]{Hardware}
 \label{app:justina_hardware}
 
-El módulo \textit{Hardware} se encarga de exponer el hardware físico del robot (cabeza, torso, brazos, pinzas, base omnidireccional, cámara RGB-D y LiDAR) como una fachada de ROS 2 síncrona para el resto del sistema, y de controlar cada uno de esos actuadores/sensores a bajo nivel.
+El módulo de \textit{Hardware} abstrae los dispositivos conectados al robot y expone las interfaces requeridas con el namespace \texttt{/hardware} para que otros módulos reciban información del sistema o envíen comandos de movimiento. El hardware del robot se compone por cabeza, torso, brazos, pinzas, base omnidireccional, cámara RGB-D y LiDAR.
 
-\textit{Arquitectura distribuida:} el sistema de Justina corre en dos computadoras que forman un mismo grafo de ROS 2 (descubrimiento DDS/CycloneDDS sobre una red Ethernet dedicada), ambas bajo el \textit{namespace} común \texttt{/hardware}:
-\begin{itemize}
-\item La \textbf{computadora principal} ejecuta \texttt{hardware\_tools} (la fachada \texttt{Hardware}), \texttt{door\_detector}, \texttt{scanner} (puente de orientación de cabeza), \texttt{kinect\_ros2} y el \textit{driver} de cámara RGB-D (\texttt{openni2\_camera}), además de todos los módulos de software de más alto nivel (Executor, HRI, Knowledge, Manipulation, Navigation, Planning, Supervisor, Vision).
-\item La \textbf{computadora embebida en la base Robotino 4 (FESTO)} (repositorio \texttt{Robotino}) ejecuta los \textit{drivers} de bajo nivel de la base, cabeza, torso, brazos y pinzas (\texttt{justina\_hardware}, \texttt{base}, \texttt{head}, \texttt{torso}, \texttt{arms}, \texttt{grippers}, \texttt{joint\_states\_parser}) y el panel de operación (\texttt{gui}, documentado en la sección de \textit{HRI} por la categorización del propio repositorio).
-\end{itemize}
-El paquete \texttt{justina\_description} está duplicado byte a byte en ambos repositorios (cada computadora necesita el URDF para su propio \texttt{robot\_state\_publisher} / TF local), por lo que se documenta una sola vez. Los dos repositorios son consistentes entre sí: los nombres de tópicos y servicios que \texttt{hardware\_tools/Hardware.hpp} espera del lado de la base Robotino (p. ej. \texttt{/hardware/arms/move\_right\_arm}, \texttt{/hardware/torso/current\_pose}) coinciden exactamente con los que los nodos de \texttt{Robotino} realmente exponen.
+Los paquetes de este módulo se ejecutan en la computadora embebida de la base, salvo en los que se indica lo contrario.
 
 % ------------------------------------------------------------
-\subsection{Paquete \texttt{hardware\_tools} (Librería cliente y launch raíz)}
-Librería \textit{Facade} (clase \texttt{Hardware}) que encapsula en llamadas síncronas los servicios de torso, cabeza, brazos, pinzas, base y detección de puerta, para que otros módulos no manejen clientes asíncronos de ROS 2 directamente. Aloja el archivo \texttt{hardware.launch.xml} (que levanta \texttt{openni2\_camera}, \texttt{depth\_image\_proc}, \texttt{door\_detector} y \texttt{scanner}, así como condicionalmente el \textit{bringup} de Takeshi/HSR) y administra la comunicación síncrona del módulo.
+\subsection{Paquete \texttt{hardware\_tools}}
+
+Implementa la clase \texttt{Hardware} como biblioteca para encapsular en llamadas síncronas los servicios de ROS 2 en los métodos \texttt{MoveTorso}, \texttt{MoveHead}, \texttt{MoveRight\allowbreak Arm}, \texttt{MoveLeft\allowbreak Arm}, \texttt{MoveRight\allowbreak Gripper}, \texttt{MoveLeft\allowbreak Gripper}, \texttt{MoveBase}, \texttt{CheckDoor\allowbreak State}, \texttt{Check\allowbreak Door}, \texttt{GetCurrent\allowbreak Pose} y \texttt{LookAt}. Adicionalmente, aloja el archivo \texttt{hardware.launch.xml}, responsable de iniciar los nodos del módulo que se ejecutan en la computadora principal.
+
+Se encuentra en la computadora principal para ser accesible para los módulos orquestradores.
 
 % ------------------------------------------------------------
-\subsection{Paquetes de percepción de la computadora principal (\texttt{door\_detector}, \texttt{scanner}, \texttt{kinect\_ros2} y \texttt{justina\_description})}
-Conjunto de paquetes alojados en la computadora principal dedicados al procesamiento del LiDAR para puertas, la orientación de la cabeza hacia puntos 3D y el modelado/simulación del robot.
+
+\subsection{Paquete \texttt{justina\_description}}
+
+Proporciona un modelo estructural del robot en el archivo URDF, incluyendo la jerarquía de eslabones y sus relaciones mediante diferentes tipos de juntas. Permite visualizar su estado durante la ejecución. Contiene, además, los nodos descritos a continuación.
+
+Se duplica byte a byte en la computadora principal.
 
 \begin{enumerate}
-\item \textbf{door\_detector\_node} (paquete \texttt{door\_detector}): \
-Determina si una puerta está abierta o cerrada comparando la distancia promedio del sector central del barrido láser de la base contra un umbral (0.75,m).
-\begin{itemize}
-\item \textbf{Tópicos suscritos}: \\
-\texttt{/hardware/base/scan} (\texttt{sensor\_msgs/LaserScan}).
-\item \textbf{Servicios ofrecidos}: \\
-\texttt{/hardware/door\_detector/check}.
-\end{itemize}
 
-\item \textbf{head\_control\_node} (paquete \texttt{scanner}): \\
-Puente entre un punto 3D de interés (publicado por \texttt{Hardware::LookAt}) y el objetivo de cabeza: calcula pan/tilt vía TF entre el marco de la cámara/cuello y el objetivo, respetando límites articulares y una zona muerta para evitar micro-movimientos. Reacciona además al estado de navegación para evitar mover la cabeza en fases críticas.
+%% ISSUE: No cumple con la nomenclatura %%
+\item \textbf{simple\_justina\_sim}: \\
+Simulador ligero que sustituye a los \textit{drivers} reales: integra la velocidad comandada, publica odometría, TF \texttt{odom a base\_link}, articulaciones falsas y un láser simulado; implementa directamente los servicios de movimiento de cabeza, torso y brazos.
+
 \begin{itemize}
     \item \textbf{Tópicos publicados}: \\
-    \texttt{/hardware/head/goal\_pose} (\texttt{std\_msgs/Float32MultiArray}).
-    \item \textbf{Tópicos suscritos}: \\
-    \texttt{/hardware/head/look\_at} (\texttt{geometry\_msgs/PointStamped}), \texttt{/hardware/head/current\_pose} (\texttt{std\_msgs/Float32MultiArray}), \texttt{/navigation/status} (\texttt{action\_msgs/GoalStatusArray}).
-\end{itemize}
+        \texttt{/hardware/base/odom} (\texttt{nav\_msgs/Odometry}) \\
+        \texttt{/hardware/joint\_states} (\texttt{sensor\_msgs/JointState}) \\
+        \texttt{/hardware/base/scan} (\texttt{sensor\_msgs/LaserScan}) \\
+        \texttt{/hardware/head/current\_pose} (\texttt{std\_msgs/Float32MultiArray}) \\
+        \texttt{/hardware/torso/current\_pose} (\texttt{std\_msgs/Float32MultiArray}) \\
+        \texttt{/hardware/arms/left\_arm/current\_pose} (\texttt{std\_msgs/Float32MultiArray}) \\ 
+        \texttt{/hardware/arms/right\_arm/current\_pose} (\texttt{std\_msgs/Float32MultiArray}) \\
+        \texttt{/navigation/initialpose} (\texttt{geometry\_msgs/PoseWithCovarianceStamped})
 
-\item \textbf{kinect\_ros2}: \\
-Controlador de terceros (basado en \texttt{libfreenect}) para la cámara Kinect v1, vendorizado en el árbol de código. No forma parte del \textit{pipeline} activo de cámara (que usa \texttt{openni2\_camera}); sólo se referencia desde \textit{launches} de depuración.
-
-\item \textbf{simple\_justina\_sim} (nodo del paquete \texttt{justina\_description}): \\
-Simulador ligero en software utilizado únicamente en configuración de pruebas sin robot físico (\texttt{justina\_sim.launch.xml}). Sustituye a \texttt{hardware\_tools} y a los \textit{drivers} reales: integra la velocidad comandada, publica odometría, TF \texttt{odom a base\_link}, articulaciones falsas y un láser simulado, e implementa directamente los servicios de movimiento de cabeza, torso y brazos.
-\begin{itemize}
-    \item \textbf{Tópicos publicados}: \\
-    \texttt{/hardware/base/odom} (\texttt{nav\_msgs/Odometry}), \texttt{/hardware/joint\_states} (\texttt{sensor\_msgs/JointState}), \texttt{/hardware/base/scan} (\texttt{sensor\_msgs/LaserScan}), \texttt{/hardware/head/current\_pose} (\texttt{std\_msgs/Float32MultiArray}), \texttt{/hardware/torso/current\_pose} (\texttt{std\_msgs/Float32MultiArray}), \texttt{/hardware/arms/left\_arm/current\_pose} (\texttt{std\_msgs/Float32MultiArray}), \texttt{/hardware/arms/right\_arm/current\_pose} (\texttt{std\_msgs/Float32MultiArray}), \texttt{/navigation/initialpose} (\texttt{geometry\_msgs/PoseWithCovarianceStamped}).
     \item \textbf{Tópicos suscritos}: \\
-    \texttt{/hardware/base/cmd\_vel} (\texttt{geometry\_msgs/Twist}), \texttt{/hardware/head/goal\_pose} (\texttt{std\_msgs/Float32MultiArray}), \texttt{/hardware/torso/goal\_pose} (\texttt{std\_msgs/Float32MultiArray}), \texttt{/hardware/arms/left\_arm/goal\_pose} (\texttt{std\_msgs/Float32MultiArray}), \texttt{/hardware/arms/right\_arm/goal\_pose} (\texttt{std\_msgs/Float32MultiArray}), \texttt{/initialpose} (\texttt{geometry\_msgs/PoseWithCovarianceStamped}), \texttt{/navigation/initialpose} (\texttt{geometry\_msgs/PoseWithCovarianceStamped}).
+        \texttt{/hardware/base/cmd\_vel} (\texttt{geometry\_msgs/Twist}) \\
+        \texttt{/hardware/head/goal\_pose} (\texttt{std\_msgs/Float32MultiArray}) \\
+        \texttt{/hardware/torso/goal\_pose} (\texttt{std\_msgs/Float32MultiArray}) \\
+        \texttt{/hardware/arms/left\_arm/goal\_pose} (\texttt{std\_msgs/Float32MultiArray}) \\
+        \texttt{/hardware/arms/right\_arm/goal\_pose} (\texttt{std\_msgs/Float32MultiArray}) \\
+        \texttt{/initialpose} (\texttt{geometry\_msgs/PoseWithCovarianceStamped}) \\
+        \texttt{/navigation/initialpose} (\texttt{geometry\_msgs/PoseWithCovarianceStamped})
+
     \item \textbf{Servicios ofrecidos}: \\
-    \texttt{/hardware/head/move\_head}, \texttt{/hardware/torso/move\_torso}, \texttt{/hardware/arms/move\_left\_arm}, \texttt{/hardware/arms/move\_right\_arm}.
+        \texttt{/hardware/head/move\_head} (\texttt{head\_interfaces/srv/MoveHead}) \\
+        \texttt{/hardware/torso/move\_torso} (\texttt{torso\_interfaces/srv/MoveTorso}) \\
+        \texttt{/hardware/arms/move\_left\_arm} (\texttt{arms\_interfaces/srv/MoveArms}) \\
+        \texttt{/hardware/arms/move\_right\_arm} (\texttt{arms\_interfaces/srv/MoveArms})
 \end{itemize}
 
-\item \textbf{kinect\_tilt\_motor\_node} (nodo del paquete \texttt{justina\_description}): \\
+%% ISSUE: Ya no se utiliza %%
+\item \textbf{kinect\_tilt\_motor\_node}: \\
 Refleja el \textit{tilt} de cabeza comandado hacia el motor físico de inclinación del Kinect v1 vía USB; sólo se lanza de forma opcional cuando la variable \texttt{use\_kinect} está activa.
+
 \begin{itemize}
     \item \textbf{Tópicos suscritos}: \\
-    \texttt{/hardware/head/current\_pose} (\texttt{std\_msgs/Float32MultiArray}).
+        \texttt{/hardware/head/current\_pose} (\texttt{std\_msgs/Float32MultiArray})
 \end{itemize}
 
-\item \textbf{depth\_to\_pointcloud} (\texttt{virtual\_pointcloud.cpp}, paquete \texttt{justina\_description}): \\
-Utilidad de depuración que convierte una imagen de profundidad y su \texttt{camera\_info} en una nube de puntos (\texttt{sensor\_msgs/PointCloud2}). No forma parte del \textit{pipeline} principal de percepción.
+%% ISSUE: No cumple con la nomenclatura %%
+\item \textbf{depth\_to\_pointcloud}: \\
+Utilidad para el entorno de simulación WeBots que convierte una imagen de profundidad y su \texttt{camera\_info} en una nube de puntos (\texttt{sensor\_msgs/PointCloud2}).
 
 \end{enumerate}
 
-% ------------------------------------------------------------
-\subsection{Paquetes de bajo nivel en la computadora Robotino (\texttt{Robotino})}
-Conjunto de paquetes que ejecutan directamente en la computadora de la base Robotino 4 para interactuar con los servomotores, controladores seriales, microcontroladores por red Ethernet y la API del fabricante.
+\subsection{Paquete \texttt{door\_detector}}
+
+Determina si el robot tiene una puerta enfrente. Se ejecuta en la computadora principal.
 
 \begin{enumerate}
-\item \textbf{justina\_hardware}: \\
-\textit{Bringup} raíz del lado Robotino. Bajo el \textit{namespace} \texttt{/hardware}, remapea los tópicos \texttt{joint\_states} relativos de cada driver al tópico canónico \texttt{/hardware/joint\_states}, incluye los \textit{launches} de los subcomponentes, ejecuta la GUI del panel de operación y levanta un \texttt{robot\_state\_publisher} local con entrada remapeada a \texttt{/manipulation/joint\_states}.
 
-\item \textbf{base\_node} (nodo \texttt{RTONode}, paquete \texttt{base}): \\
-Driver principal de la base Robotino 4. Conecta por TCP al servidor \textit{RobotinoAPI2} del fabricante (clase \texttt{ComROS}) para exponer tracción omnidireccional, parachoques (\textit{bumper}), lecturas de motores, gestión de energía, IMU, entradas/salidas digitales y encoders.
+\item \textbf{door\_detector\_node}: \\
+Determina si una puerta está abierta o cerrada comparando la distancia promedio del sector central del barrido láser de la base contra un umbral (0.75 m).
+
 \begin{itemize}
-    \item \textbf{Tópicos publicados}: \\
-    \texttt{/hardware/base/bumper} (\texttt{std\_msgs/Bool}), \texttt{/hardware/base/motor\_readings} (\texttt{std\_msgs/Float32MultiArray}), \texttt{/hardware/base/motor\_error\_readings} (\texttt{std\_msgs/Float32MultiArray}), \texttt{/hardware/base/joint\_states} (\texttt{sensor\_msgs/JointState}), \texttt{/hardware/base/battery\_status} (\texttt{sensor\_msgs/BatteryState}), \texttt{/hardware/base/imu} (\texttt{sensor\_msgs/Imu}), \texttt{/hardware/base/digital\_readings} (\texttt{std\_msgs/BoolMultiArray}), \texttt{/hardware/base/encoder\_readings} (\texttt{std\_msgs/Int32MultiArray}).
     \item \textbf{Tópicos suscritos}: \\
-    \texttt{/hardware/base/cmd\_vel} (\texttt{geometry\_msgs/Twist}), \texttt{/hardware/base/set\_digital\_values} (\texttt{std\_msgs/BoolMultiArray}).
+        \texttt{/hardware/base/scan} (\texttt{sensor\_msgs/LaserScan})
+
     \item \textbf{Servicios ofrecidos}: \\
-    \texttt{/hardware/base/cmd\_vel\_enable}, \texttt{/hardware/base/set\_velocity\_limits}, \texttt{/hardware/base/set\_encoder\_position}.
+        \texttt{/hardware/door\_detector/check} (\texttt{std\_srvs/srv/Trigger})
 \end{itemize}
 
-\item \textbf{robotino\_odometry\_node} (paquete \texttt{base}): \\
-Calcula y publica la odometría de la base a partir de las lecturas del driver, operando como un ejecutable independiente del nodo principal.
-\begin{itemize}
-    \item \textbf{Tópicos publicados}: \\
-    \texttt{/hardware/base/odom} (\texttt{nav\_msgs/Odometry}); difunde también la TF \texttt{odom a base\_link} si \texttt{launch\_odom\_tf} está activo.
-    \item \textbf{Servicios ofrecidos}: \\
-    \texttt{/hardware/base/reset\_odometry}.
-\end{itemize}
+\end{enumerate}
 
-\item \textbf{digital\_stop\_node} (ejecutable \texttt{Stop\_node}, paquete \texttt{base}): \\
-Traduce el estado de la entrada digital física (índice 6 del arreglo, conectada a un botón/interruptor de paro) a la señal de alto que consumen navegación, brazos, cabeza y pinzas.
+\subsection{Paquete \texttt{scanner}}
+
+Fija la cabeza en dirección al punto de intéres establecido por el módulo de visión. Se ejecuta en la computadora principal.
+
+\begin{enumerate}
+
+\item \textbf{head\_control\_node}: \\
+Publica la posición de la cabeza en función de un punto 3D de interés publicado en \texttt{/hardware/head/look\_at}. Calcula pan/tilt vía TF entre el marco de la cámara/cuello y el objetivo, respetando límites articulares y una zona muerta para evitar micro-movimientos. Reacciona además al estado de navegación para evitar mover la cabeza en fases críticas.
+
 \begin{itemize}
     \item \textbf{Tópicos publicados}: \\
-    \texttt{/navigation/navigation\_ctrl/stop} (\texttt{std\_msgs/Bool}).
+        \texttt{/hardware/head/goal\_pose} (\texttt{std\_msgs/Float32MultiArray})
+    
     \item \textbf{Tópicos suscritos}: \\
-    \texttt{/hardware/base/digital\_readings} (\texttt{std\_msgs/BoolMultiArray}).
+        \texttt{/hardware/head/look\_at} (\texttt{geometry\_msgs/PointStamped}) \\
+        \texttt{/hardware/head/current\_pose} (\texttt{std\_msgs/Float32MultiArray}) \\
+        \texttt{/navigation/status} (\texttt{action\_msgs/GoalStatusArray})
 \end{itemize}
 
-\item \textbf{head\_node} (paquete \texttt{head}): \\
+\end{enumerate}
+
+% ISSUE: La GUI se levanta bajo el namespace Hardware %%
+\subsection{Paquete \texttt{justina\_hardware}}
+
+\textit{Bringup} de la base Robotino. Bajo el \textit{namespace} \texttt{/hardware}, remapea los tópicos \texttt{joint\_states} relativos de cada driver al tópico canónico \texttt{/hardware/joint\_states}, incluye los \textit{launches} de los subcomponentes, ejecuta la GUI del panel de operación y levanta un \texttt{robot\_state\_publisher} local con entrada remapeada a \path{/manipulation/joint_states}.
+
+\subsection{Paquete \texttt{base}}
+
+Reúne todos los paquetes y drivers de \emph{Festo} con implementación en ROS 2 necesarios para el control de la base móvil Robotino.
+
+\begin{enumerate}
+
+\item \textbf{base\_node}:
+
+Driver principal de la base Robotino 4. Conecta por TCP/IP al servidor \textit{RobotinoAPI2} del fabricante (clase \texttt{ComROS}) para exponer tracción omnidireccional, \textit{bumpers}, lecturas de motores, gestión de energía, IMU, entradas/salidas digitales y encoders.
+
+\begin{itemize}
+    \item \textbf{Tópicos publicados}: \\
+        \texttt{/hardware/base/bumper} (\texttt{std\_msgs/Bool}) \\
+        \texttt{/hardware/base/motor\_readings} (\texttt{std\_msgs/Float32MultiArray}) \\
+        \texttt{/hardware/base/motor\_error\_readings} (\texttt{std\_msgs/Float32MultiArray}) \\
+        \texttt{/hardware/base/joint\_states} (\texttt{sensor\_msgs/JointState}) \\
+        \texttt{/hardware/base/battery\_status} (\texttt{sensor\_msgs/BatteryState}) \\
+        \texttt{/hardware/base/imu} (\texttt{sensor\_msgs/Imu}) \\
+        \texttt{/hardware/base/digital\_readings} (\texttt{std\_msgs/BoolMultiArray}) \\
+        \texttt{/hardware/base/encoder\_readings} (\texttt{std\_msgs/Int32MultiArray})
+
+    \item \textbf{Tópicos suscritos}: \\
+        \texttt{/hardware/base/cmd\_vel} (\texttt{geometry\_msgs/Twist}) \\
+        \texttt{/hardware/base/set\_digital\_values} (\texttt{std\_msgs/BoolMultiArray})
+
+    \item \textbf{Servicios ofrecidos}: \\
+        \texttt{/hardware/base/cmd\_vel\_enable} (\texttt{base\_interfaces/srv/Set\allowbreak Omni\allowbreak Drive\allowbreak Enabled}) \\
+        \texttt{/hardware/base/set\_velocity\_limits} (\texttt{base\_interfaces/srv/Set\allowbreak Vel\allowbreak Limits}) \\
+        \texttt{/hardware/base/set\_encoder\_position} (\texttt{base\_interfaces/srv/Set\allowbreak Encoder\allowbreak Position})
+\end{itemize}
+
+\item \textbf{robotino\_odometry\_node}:
+
+Calcula y publica la odometría de la base a partir de las lecturas del driver, operando como un ejecutable independiente del nodo principal; publica la TF \texttt{odom} si \texttt{publish\_odom\_tf} está activo.
+
+\begin{itemize}
+    \item \textbf{Tópicos publicados}: \\
+        \texttt{/hardware/base/odom} (\texttt{nav\_msgs/Odometry})
+    
+    \item \textbf{Servicios ofrecidos}: \\
+        \texttt{/hardware/base/reset\_odometry} (\texttt{base\_interfaces/srv/Reset\allowbreak Odometry})
+\end{itemize}
+
+\item \textbf{digital\_stop\_node}:
+
+Mapea el estado de la entrada digital física (DI7 del arreglo, conectada al botón de paro) a la señal de alto que consumen navegación, brazos, cabeza y pinzas.
+
+\begin{itemize}
+    \item \textbf{Tópicos publicados}: \\
+        \texttt{/navigation/navigation\_ctrl/stop} (\texttt{std\_msgs/Bool})
+    
+    \item \textbf{Tópicos suscritos}: \\
+        \texttt{/hardware/base/digital\_readings} (\texttt{std\_msgs/BoolMultiArray})
+\end{itemize}
+
+\end{enumerate}
+
+\subsection{Paquete \texttt{head}}
+
+Proporciona el driver para el control de posición y velocidad de la cabeza.
+
+\begin{enumerate}
+
+\item \textbf{head\_node}:
+
 Controla los 2 servomotores Dynamixel de pan/tilt de la cabeza vía RS-485 mediante el SDK de Dynamixel.
+
 \begin{itemize}
     \item \textbf{Tópicos publicados}: \\
-    \texttt{/hardware/head/joint\_states} (\texttt{sensor\_msgs/JointState}), \texttt{/hardware/head/current\_pose} (\texttt{std\_msgs/Float32MultiArray}), \texttt{/hardware/head/goal\_reached} (\texttt{std\_msgs/Bool}).
+        \texttt{/hardware/head/joint\_states} (\texttt{sensor\_msgs/JointState}) \\
+        \texttt{/hardware/head/current\_pose} (\texttt{std\_msgs/Float32MultiArray}) \\
+        \texttt{/hardware/head/goal\_reached} (\texttt{std\_msgs/Bool})
+
     \item \textbf{Tópicos suscritos}: \\
-    \texttt{/hardware/head/goal\_pose} (\texttt{std\_msgs/Float32MultiArray}), \texttt{/navigation/navigation\_ctrl/stop} (\texttt{std\_msgs/Bool}).
+        \texttt{/hardware/head/goal\_pose} (\texttt{std\_msgs/Float32MultiArray}) \\
+        \texttt{/navigation/navigation\_ctrl/stop} (\texttt{std\_msgs/Bool})
+
     \item \textbf{Servicios ofrecidos}: \\
-    \texttt{/hardware/head/move\_head}.
+        \texttt{/hardware/head/move\_head} (\texttt{head\_interfaces/srv/MoveHead})
 \end{itemize}
 
-\item \textbf{torso\_node} (paquete \texttt{torso}): \\
-Controla el eje lineal del torso mediante un controlador Jrk (Pololu) sobre puerto serial (\texttt{/dev/torso}), usando retroalimentación analógica de posición con tolerancia y verificación de lecturas estables.
+\end{enumerate}
+
+\subsection{Paquete \texttt{torso}}
+
+Proporciona el driver para el control de posición del torso.
+
+\begin{enumerate}
+
+\item \textbf{torso\_node}:
+
+Controla el eje lineal del torso mediante un controlador Jrk (Pololu) sobre el puerto USB (\texttt{/dev/torso}), usando retroalimentación analógica de posición con tolerancia y verificación de lecturas estables.
+
 \begin{itemize}
     \item \textbf{Tópicos publicados}: \\
-    \texttt{/hardware/torso/joint\_states} (\texttt{sensor\_msgs/JointState}), \texttt{/hardware/torso/current\_pose} (\texttt{std\_msgs/Float32MultiArray}), \texttt{/hardware/torso/goal\_reached} (\texttt{std\_msgs/Bool}).
+        \texttt{/hardware/torso/joint\_states} (\texttt{sensor\_msgs/JointState}) \\
+        \texttt{/hardware/torso/current\_pose} (\texttt{std\_msgs/Float32MultiArray}) \\
+        \texttt{/hardware/torso/goal\_reached} (\texttt{std\_msgs/Bool})
+    
     \item \textbf{Tópicos suscritos}: \\
-    \texttt{/hardware/torso/goal\_pose} (\texttt{std\_msgs/Float32MultiArray}).
+        \texttt{/hardware/torso/goal\_pose} (\texttt{std\_msgs/Float32MultiArray})
+    
     \item \textbf{Servicios ofrecidos}: \\
-    \texttt{/hardware/torso/move\_torso}.
+        \texttt{/hardware/torso/move\_torso} (\texttt{torso\_interfaces/srv/MoveTorso})
 \end{itemize}
 
-\item \textbf{arms\_node} (\texttt{left\_arm\_node} / \texttt{right\_arm\_node}, paquete \texttt{arms}): \\
-Controla los 6 servomotores Dynamixel de cada brazo sobre bus RS-485. El mismo ejecutable se instancía dos veces (parametrizado por \texttt{left\_arm.yaml} y \texttt{right\_arm.yaml}) e incluye un esquema de compensación de gravedad mediante \textit{offsets} estáticos.
+\end{enumerate}
+
+\subsection{Paquete \texttt{arms}}
+
+Proporciona los drivers para el control de posición y velocidad de los manipuladores del robot.
+
+\begin{enumerate}
+
+\item \textbf{arms\_node}:
+
+Controla los 6 servomotores Dynamixel de cada brazo sobre bus RS-485. El mismo nodo se instancía dos veces (parametrizado por \texttt{left\_arm.yaml} y \texttt{right\_arm.yaml}) e incluye un esquema de compensación de deformación.
+
 \begin{itemize}
     \item \textbf{Tópicos publicados}: \\
-    \texttt{/hardware/arms/left\_arm/joint\_states} y \texttt{/hardware/arms/right\_arm/joint\_states} (\texttt{sensor\_msgs/JointState}), \texttt{/hardware/arms/left\_arm/current\_pose} y \texttt{/hardware/arms/right\_arm/current\_pose} (\texttt{std\_msgs/Float32MultiArray}), \texttt{/hardware/arms/left\_arm/goal\_reached} y \texttt{/hardware/arms/right\_arm/goal\_reached} (\texttt{std\_msgs/Bool}).
+        \texttt{/hardware/arms/left\_arm/joint\_states} (\texttt{sensor\_msgs/JointState}) \\
+        \texttt{/hardware/arms/right\_arm/joint\_states} (\texttt{sensor\_msgs/JointState}) \\
+        \texttt{/hardware/arms/left\_arm/current\_pose} (\texttt{std\_msgs/Float32MultiArray}) \\
+        \texttt{/hardware/arms/right\_arm/current\_pose} (\texttt{std\_msgs/Float32MultiArray}) \\
+        \texttt{/hardware/arms/left\_arm/goal\_reached} (\texttt{std\_msgs/Bool}) \\
+        \texttt{/hardware/arms/right\_arm/goal\_reached} (\texttt{std\_msgs/Bool})
+    
     \item \textbf{Tópicos suscritos}: \\
-    \texttt{/hardware/arms/left\_arm/goal\_pose} y \texttt{/hardware/arms/right\_arm/goal\_pose} (\texttt{std\_msgs/Float32MultiArray}), \texttt{/navigation/navigation\_ctrl/stop} (\texttt{std\_msgs/Bool}).
+        \texttt{/hardware/arms/left\_arm/goal\_pose} (\texttt{std\_msgs/Float32MultiArray}) \\
+        \texttt{/hardware/arms/right\_arm/goal\_pose} (\texttt{std\_msgs/Float32MultiArray}) \\
+        \texttt{/navigation/navigation\_ctrl/stop} (\texttt{std\_msgs/Bool})
+    
     \item \textbf{Servicios ofrecidos}: \\
-    \texttt{/hardware/arms/move\_left\_arm}, \texttt{/hardware/arms/move\_right\_arm}.
+        \texttt{/hardware/arms/move\_left\_arm} (\texttt{arms\_interfaces/srv/MoveArms}) \\
+        \texttt{/hardware/arms/move\_right\_arm} (\texttt{arms\_interfaces/srv/MoveArms})
 \end{itemize}
 
-\item \textbf{grippers\_node} (\texttt{left\_gripper\_node} / \texttt{right\_gripper\_node}, paquete \texttt{grippers}): \\
-Controla las pinzas mediante comunicación TCP/IP hacia un microcontrolador RP2350 (con interfaz Ethernet W5500) ejecutando un protocolo binario propio de 8 bytes. Se instancía dos veces (una por lado).
+\end{enumerate}
+
+\subsection{Paquete \texttt{grippers}}
+
+Proporciona los drivers para el control de las pinzas del robot.
+
+\begin{enumerate}
+
+\item \textbf{grippers\_node}:
+
+Controla las pinzas mediante comunicación TCP/IP hacia un microcontrolador RP2350, ejecutando un protocolo binario propio de 8 bytes. El mismo nodo se instancía dos veces (parametrizado por \texttt{left\_gripper.yaml} y \texttt{right\_gripper.yaml}).
+
 \begin{itemize}
     \item \textbf{Tópicos publicados}: \\
-    \texttt{/hardware/grippers/left\_gripper/joint\_states} y \texttt{/hardware/grippers/right\_gripper/joint\_states} (\texttt{sensor\_msgs/JointState}).
+        \texttt{/hardware/grippers/left\_gripper/joint\_states} (\texttt{sensor\_msgs/JointState}) \\
+        \texttt{/hardware/grippers/right\_gripper/joint\_states} (\texttt{sensor\_msgs/JointState})
+    
     \item \textbf{Tópicos suscritos}: \\
-    \texttt{/navigation/navigation\_ctrl/stop} (\texttt{std\_msgs/Bool}).
+        \texttt{/navigation/navigation\_ctrl/stop} (\texttt{std\_msgs/Bool})
+    
     \item \textbf{Servicios ofrecidos}: \\
-    \texttt{/hardware/grippers/move\_left\_gripper}, \texttt{/hardware/grippers/move\_right\_gripper}.
+        \texttt{/hardware/grippers/move\_left\_gripper} (\texttt{grippers\_interfaces/srv/Move\allowbreak Grippers}) \\
+        \texttt{/hardware/grippers/move\_right\_gripper} (\texttt{grippers\_interfaces/srv/Move\allowbreak Grippers})
 \end{itemize}
 
-\item \textbf{joint\_states\_parser\_node} (paquete \texttt{joint\_states\_parser}): \\
+\end{enumerate}
+
+\subsection{Paquete \texttt{joint\_states\_parser}}
+
+Compila los estados de todas las juntas del robot, proporcionados por cada driver para generar el tópico canónico \texttt{/hardware/joint\_states}.
+
+\begin{enumerate}
+
+\item \textbf{joint\_states\_parser\_node}:
+
 Fusiona las lecturas parciales de articulaciones provenientes de los distintos drivers (base, torso, brazos, pinzas, cabeza) publicadas en \texttt{/hardware/joint\_states} y genera un mensaje completo en orden canónico para MoveIt2.
+
 \begin{itemize}
     \item \textbf{Tópicos publicados}: \\
-    \texttt{/manipulation/joint\_states} (\texttt{sensor\_msgs/JointState}).
+        \texttt{/manipulation/joint\_states} (\texttt{sensor\_msgs/JointState})
+    
     \item \textbf{Tópicos suscritos}: \\
-    \texttt{/hardware/joint\_states} (\texttt{sensor\_msgs/JointState}).
+        \texttt{/hardware/joint\_states} (\texttt{sensor\_msgs/JointState})
 \end{itemize}
 
-\item \textbf{urg\_node}: \\
-Paquete de terceros (\textit{driver} Hokuyo) que lee el LiDAR 2D de la base por serial (\texttt{dev/lidar}) acotado a 180 grados y publica la lectura procesada.
+\end{enumerate}
+
+\subsection{Paquete \texttt{urg\_node}}
+
+Provee las mediciones planares de distancia para el mapeo, localización y evación de obstáculos. Es un paquete de ROS 2 que se debe instalar como una dependencia externa.
+
+\begin{enumerate}
+
+\item \textbf{urg\_node}:
+
+Driver que lee el LiDAR 2D \emph{Hokuyo} de la base por puerto USB (\texttt{dev/lidar}) acotado a 180 grados y publica la lectura procesada.
+
 \begin{itemize}
     \item \textbf{Tópicos publicados}: \\
-    \texttt{/hardware/base/scan} (\texttt{sensor\_msgs/LaserScan}, remapeado desde su salida por defecto).
+        \texttt{/hardware/base/scan} (\texttt{sensor\_msgs/LaserScan})
 \end{itemize}
 
 \end{enumerate}
