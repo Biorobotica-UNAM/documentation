@@ -15,105 +15,168 @@ La estructura de cada módulo, especificando sus paquetes, nodos e interfaces de
 
 \section[Planning]{Planning}
 \label{app:justina_planning}
+\begingroup
+\sloppy
 
-El módulo \textit{Planning} traduce comandos en lenguaje natural o metas estructuradas en un plan ejecutable de instrucciones. El procesamiento inicia en las herramientas de análisis semántico (\textit{semantic\_parser}) y concluye en el motor de reglas CLIPS (\texttt{clips\_node}), el cual publica la secuencia de acciones resultante en \texttt{/planning/clips/results} para su posterior gestión por el módulo \textit{Supervisor}.
+El módulo \textit{Planning} transforma comandos escritos o escuchados en un plan de instrucciones para Justina. Se organiza en tres componentes: \texttt{semantic\_parser}, que interpreta el comando; \texttt{clips}, que convierte las metas en hechos y genera acciones mediante reglas; y \texttt{planning\_tools}, que proporciona la biblioteca cliente C++, el lanzamiento integrado y una herramienta de prueba. La generación del plan termina al publicarlo en \texttt{/planning/clips/results}; su gestión y ejecución corresponden a los componentes de \textit{Supervisor} y \textit{Executor} descritos en las secciones siguientes.
 
 % ------------------------------------------------------------
-\subsection{Paquete \texttt{clips\_node} (Python)}
-Proporciona la envoltura para el motor de reglas CLIPS (mediante la librería \texttt{clips}) y las utilidades de conversión de metas.
-
+\subsection{Flujo de funcionamiento}
 \begin{enumerate}
-    \item \textbf{clips\_node}: \\
-    Motor principal de planeación. Carga el conjunto de reglas definido por el parámetro \texttt{plan\_name} (correspondiente a categorías de prueba de RoboCup@Home como \texttt{gpsr\_planning}, \texttt{restaurant\_planning}, entre otros) y ejecuta la inferencia en un hilo independiente para evitar el bloqueo del ejecutor de ROS~2.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/planning/clips/results} (\texttt{std\_msgs/String}).
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/planning/clips/start\_planning}, \\
-        \texttt{/planning/clips/assert\_fact}, \\
-        \texttt{/planning/clips/assert\_facts\_batch}.
-    \end{itemize}
-
-    \item \textbf{goals\_to\_clips\_node}: \\
-    (Nombre interno: \texttt{goals\_to\_clips}) Convierte una lista JSON de metas \texttt{goal(args)} en hechos CLIPS, realizándolo en lote antes de disparar la planeación.
-    \begin{itemize}
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/planning/goals\_to\_clips/convert}.
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{/planning/clips/assert\_facts\_batch}, \\
-        \texttt{/planning/clips/start\_planning}.
-    \end{itemize}
-
-    \item \textbf{natural\_to\_clips.py}: \\
-    \textbf{Estado}: Ejecutable instalado pero huérfano (sin referencias en archivos \textit{launch}). Traduciría oraciones libres a hechos CLIPS.
-    \begin{itemize}
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/hri/listener/natural\_to\_clips/interpret}.
-    \end{itemize}
+    \item Un cliente entrega texto al servicio de interpretación o solicita escuchar un comando mediante HRI.
+    \item \texttt{qwen\_semantic\_node} consulta un servidor HTTP Qwen y devuelve una cadena JSON con el texto de entrada y una lista de metas \texttt{goals}.
+    \item El cliente coordinador valida la respuesta y la envía a \texttt{goals\_to\_clips\_node}. Consultar el parser por sí solo no inicia la planeación.
+    \item El conversor analiza y normaliza las metas, clasifica sus objetivos y construye hechos \texttt{gpsr-goal}. Solicita reiniciar la memoria de CLIPS e insertar el lote de hechos; después solicita iniciar la planeación.
+    \item Las reglas de \texttt{goals\_planning.clp} expanden las metas en acciones, conservando el orden de las metas. El motor genera hechos \texttt{action-step} y posteriormente \texttt{ros-message}.
+    \item El nodo CLIPS ordena y serializa el plan en una sola cadena, lo publica y lo agrega a \texttt{plan\_execution.log}. Un gestor conectado al tópico puede almacenar y entregar las instrucciones para su ejecución.
 \end{enumerate}
 
-% ------------------------------------------------------------
-\subsection{Paquete \texttt{semantic\_parser}}
-Ofrece capacidades de comprensión de lenguaje natural para la interpretación de comandos.
-
-\begin{enumerate}
-    \item \textbf{qwen\_semantic\_node}: \\
-    Consulta un servidor HTTP externo basado en el modelo Qwen para transformar comandos transcritos en metas estructuradas.
-    \begin{itemize}
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/planning/semantic\_parser/semantic\_parser}, \\
-        \texttt{/planning/semantic\_parser/listen\_gpsr}.
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{/hri/listener/listen}.
-    \end{itemize}
-
-    \item \textbf{semantic\_node}: \\
-    Analiza oraciones mediante un \textit{pipeline} de spaCy (\texttt{en\_core\_web\_trf}) para generar representaciones semánticas estructuradas. \\
-    \textbf{Anomalía de despliegue}: El archivo \texttt{semantic\_parser.launch.xml} instancia este nodo dos veces de forma simultánea. Esto genera una colisión de nombres de nodo e interfiere con el servicio registrado por \texttt{qwen\_semantic\_node}.
-    \begin{itemize}
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/planning/semantic\_parser/semantic\_parser\_spacy}, \\
-        \texttt{/planning/semantic\_parser/semantic\_parser}.
-    \end{itemize}
-
-    \item \textbf{entity\_extractor\_node}: \\
-    Identifica y extrae entidades nombradas consultando directamente los diccionarios del paquete \texttt{knowledge\_bank}.
-    \begin{itemize}
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/planning/semantic\_parser/extract\_entity}.
-    \end{itemize}
-\end{enumerate}
+El flujo actual actúa como un compilador de metas basado en reglas: cada meta se expande mediante reglas específicas, sin una búsqueda general entre planes alternativos. El contexto utilizado durante esta expansión es simbólico; generar una acción o actualizar ese contexto no confirma que el robot haya ejecutado la acción.
 
 % ------------------------------------------------------------
-\subsection{Paquete \texttt{primitive\_to\_clips}}
-Convierte la descripción de una primitiva en hechos CLIPS contextualizados con el estado del entorno.
+\subsection{Interpretación: paquete \texttt{semantic\_parser}}
+\texttt{qwen\_semantic\_node} es el único proveedor del servicio de interpretación en el lanzamiento integrado. Su cliente \texttt{QwenHTTPClient} envía \texttt{POST /translate} al servidor configurado, con un objeto JSON que contiene \texttt{command}. La respuesta HTTP debe indicar éxito mediante \texttt{ok} y contener los objetos \texttt{result} y \texttt{prediction}; las metas se obtienen de \texttt{result.prediction.goals}. El nodo devuelve al cliente ROS un JSON con \texttt{input} y \texttt{goals}, dentro del campo de texto \texttt{response}.
 
-\begin{enumerate}
-    \item \textbf{primitive\_to\_clips\_node}: \\
-    \textbf{Estado}: Inactivo (comentado en \texttt{clips.launch.xml}).
-    \begin{itemize}
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/planning/primitive\_to\_clips/convert}.
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{/planning/clips/assert\_facts\_batch}, \\
-        \texttt{/planning/clips/start\_planning}.
-    \end{itemize}
-\end{enumerate}
+El servicio \texttt{listen\_gpsr} utiliza \texttt{/hri/listener/listen} para reconocer un comando y después consulta Qwen. Ignora el campo \texttt{command} de la petición. La escucha y la consulta HTTP son etapas sucesivas con tiempos de espera independientes. Ninguno de los dos servicios inicia CLIPS automáticamente.
+
+Una entrada de texto vacía devuelve \texttt{[]}. Los fallos de interpretación se comunican mediante JSON con \texttt{status=aborted} y una razón. El cliente debe comprobar el formato y la presencia de metas; recibir una respuesta ROS no garantiza una interpretación válida. La comprobación estructural del cliente HTTP tampoco garantiza que las metas sean compatibles con las reglas o fieles al comando original.
+
+\texttt{entity\_extractor\_node} ofrece una función complementaria durante las acciones \texttt{listen} del Executor. Busca términos conocidos por categoría mediante expresiones regulares y catálogos YAML de \texttt{knowledge\_bank/dictionaries}. No consulta Qwen. Las categorías \texttt{NAME}, \texttt{FOLLOW} y \texttt{CONFIRM} devuelven un valor; las demás pueden devolver varios. Los resultados se normalizan con guiones bajos. Los catálogos se cargan al iniciar el nodo, por lo que sus cambios requieren reiniciarlo. La interfaz \texttt{ExtractEntity.srv} y los diccionarios están presentes en las fuentes actuales.
 
 % ------------------------------------------------------------
-\subsection{Paquete \texttt{planning\_tools} (C++)}
-Funciona como la fachada principal (clase \texttt{Planning}) y aloja el archivo \textit{launch} raíz del módulo (\texttt{planning.launch.xml}). No contiene nodos ejecutables persistentes propios, pero agrupa las llamadas del cliente a los servicios de todo el módulo.
+\subsection{Planeación simbólica: componente \texttt{clips}}
+La carpeta \texttt{clips} agrupa los paquetes ROS~2 \texttt{clips\_node}, \texttt{clips\_launch} y \texttt{plan\_manager\_node}. El motor Python utiliza Clipspy, importado como \texttt{clips}.
 
-\textit{Anomalías detectadas}: Los métodos \texttt{interpretToClips()} y \texttt{requestInstruction()} hacen referencia a servicios cuyos servidores no están activos en el despliegue actual (\texttt{natural\_to\_clips.py} inactivo y discrepancia en el \textit{namespace} de \texttt{supervisor\_plan\_node}).
-
-% ------------------------------------------------------------
-\subsection{Paquetes de soporte y código de depuración}
 \begin{itemize}
-    \item \texttt{clips\_launch}: \\
-    Paquete exclusivo de archivos \textit{launch} (\texttt{clips.launch.xml}) que orquesta el arranque de \texttt{clips\_node} y \texttt{goals\_to\_clips\_node}.
-    \item \texttt{plan\_manager\_node} (\textbf{Código huérfano}): \\
-    Nodo no referenciado por ningún archivo \textit{launch}. Implementa lógica de despacho previa que ha sido reemplazada por el nodo \texttt{supervisor\_plan\_node} en el módulo \textit{Supervisor}.
+    \item \textbf{\texttt{goals\_to\_clips\_node}}: acepta una lista JSON de metas o un objeto con la propiedad \texttt{goals}. Cada meta tiene la forma \texttt{accion(objetivo, clave=valor, ...)}. Normaliza espacios en argumentos a guiones bajos, interpreta destinos y calificadores e infiere si el objetivo es una persona, objeto, ubicación o información, considerando el conjunto de metas.
+    \item \textbf{\texttt{clips\_node}}: carga los archivos de reglas seleccionados por \texttt{plan\_name}. Como CLIPS no permite acceso concurrente seguro, encola las operaciones y las ejecuta secuencialmente en un único hilo de trabajo. El servicio de inserción por lote reinicia el entorno, inserta los hechos y ejecuta el motor; el servicio de inicio inserta \texttt{(start (name action-planning))} y vuelve a ejecutar las reglas.
+    \item \textbf{\texttt{clips\_engine.py} y \texttt{clips\_components.py}}: encapsulan el entorno CLIPS, la selección de reglas y la extracción del plan ordenado.
+    \item \textbf{\texttt{clips\_launch}}: inicia el motor y, opcionalmente, el conversor de metas. El flujo principal utiliza \texttt{plan\_name=goals}, que selecciona \texttt{goals\_planning.clp}; también se conservan conjuntos de reglas para planes fijos.
 \end{itemize}
+
+Los hechos \texttt{gpsr-goal} contienen los campos \texttt{step} (orden), \texttt{name} (meta), \texttt{target} (objetivo), \texttt{kind} (clasificación), \texttt{destination} (destino), \texttt{relation}, \texttt{value} y \texttt{qualifier} (atributo visual). Las reglas procesan una meta únicamente cuando no existe otra con un número de paso menor.
+
+Entre las metas soportadas se encuentran \texttt{go}, \texttt{find}, \texttt{take}, \texttt{place}, \texttt{deliver}, \texttt{guide}, \texttt{follow}, \texttt{count}, \texttt{tell}, \texttt{save}, \texttt{answer\_question} y \texttt{greet}. Una meta desconocida genera una explicación hablada. Las reglas mantienen información sobre ubicación, objeto sostenido, personas localizadas y análisis visuales para reutilizar contexto y evitar desplazamientos redundantes. La manipulación está habilitada por defecto; puede desactivarse mediante la configuración simbólica de las reglas.
+
+La salida incluye las marcas \texttt{GPSR\_START} y \texttt{GPSR\_DONE}, y líneas con el formato \texttt{Paso N: Justina accion argumentos}. Los anuncios generales utilizan números desde 1 y las acciones operativas desde 1001; al ordenar el plan, los anuncios pueden preceder a las acciones. Al finalizar, las reglas desactivan el foco si sigue activo, agregan un regreso a \texttt{instruction\_point} si corresponde y una indicación hablada de finalización. Estas instrucciones describen el plan generado, no el resultado de su ejecución.
+
+% ------------------------------------------------------------
+\subsection{Integración: paquete \texttt{planning\_tools}}
+La clase C++ \texttt{Planning} se construye con el nodo del consumidor y encapsula los siguientes clientes:
+\begin{itemize}
+    \item \texttt{parseSemanticCommand()}: interpreta texto o el contenido de un archivo existente con extensión \texttt{.txt}; devuelve el JSON sin validación semántica. Tiempo de espera de respuesta predeterminado: 10~s.
+    \item \texttt{listenGpsrCommand()}: solicita escucha e interpretación; devuelve metas o un JSON de aborto. Tiempo predeterminado: 45~s.
+    \item \texttt{goalsToClips()}: envía el JSON al conversor, que inserta hechos e inicia la planeación. Tiempo predeterminado: 5~s. No requiere una llamada posterior a \texttt{startPlanning()}.
+    \item \texttt{startPlanning()}: solicita iniciar el motor cuando los hechos ya fueron insertados por otro cliente. Tiempo predeterminado: 5~s.
+    \item \texttt{requestInstruction()}: solicita la siguiente instrucción y la divide en tokens por espacios. Reintenta cada 300~ms ante fallos o ausencia de instrucciones, hasta obtener una válida o finalizar ROS. Los 5~s predeterminados limitan cada intento, no la duración total del método.
+    \item \texttt{extractEntity()}: consulta el extractor y devuelve los resultados como un vector de cadenas. Tiempo predeterminado: 5~s.
+\end{itemize}
+
+Las llamadas son síncronas desde la perspectiva del consumidor, aunque utilizan peticiones ROS asíncronas internamente. El nodo debe disponer de un executor que procese las respuestas mientras se espera. Si se invocan desde callbacks bloqueantes, se necesita un \texttt{MultiThreadedExecutor} con hilos disponibles; el \texttt{ReentrantCallbackGroup} por sí solo no procesa respuestas. Cada llamada espera además hasta un segundo por disponibilidad del servicio. Los clientes utilizan nombres absolutos.
+
+El paquete también contiene \texttt{planning.launch.xml}, que integra CLIPS y el parser bajo \texttt{/planning}, y \texttt{qwen\_to\_plan.py}, que coordina interpretación, conversión y recepción del plan para pruebas. No ejecuta las acciones del robot.
+
+% ------------------------------------------------------------
+\subsection{Interfaces ROS~2}
+Los nombres siguientes corresponden al lanzamiento integrado:
+\begin{description}
+    \item[Interpretación de texto:] \texttt{/planning/semantic\_parser/semantic\_parser}.\\
+    Tipo \texttt{semantic\_parser\_interfaces/srv/Parser}. Recibe \texttt{command} y devuelve \texttt{response}; ambos son cadenas.
+    \item[Escucha e interpretación:] \texttt{/planning/semantic\_parser/listen\_gpsr}, del mismo tipo \texttt{Parser}.
+    \item[Extracción de entidades:] \texttt{/planning/semantic\_parser/extract\_entity}.\\
+    Tipo \texttt{semantic\_parser\_interfaces/srv/ExtractEntity}. Recibe \texttt{sentence} y \texttt{category}; devuelve \texttt{value} y \texttt{values}.
+    \item[Conversión de metas:] \texttt{/planning/goals\_to\_clips/convert}.\\
+    Tipo \texttt{clips\_interfaces/srv/String}. Recibe el JSON en \texttt{data} y devuelve una cadena en \texttt{data}, normalmente \texttt{OK} o un error.
+    \item[Inserción individual:] \texttt{/planning/clips/assert\_fact}.\\
+    Tipo \texttt{clips\_interfaces/srv/String}. Inserta un hecho y ejecuta el motor.
+    \item[Inserción por lote:] \texttt{/planning/clips/assert\_facts\_batch}.\\
+    Tipo \texttt{clips\_interfaces/srv/StringArray}. Reinicia el entorno e inserta un arreglo de hechos.
+    \item[Inicio de planeación:] \texttt{/planning/clips/start\_planning}.\\
+    Tipo \texttt{std\_srvs/srv/Trigger}.
+    \item[Plan publicado:] \texttt{/planning/clips/results}, tópico de tipo \texttt{std\_msgs/msg/String}. Contiene el plan completo separado por saltos de línea.
+\end{description}
+
+Los servicios y el tópico del motor se crean con nombres relativos y adquieren el prefijo del launch. El conversor utiliza destinos absolutos bajo \texttt{/planning}; ejecutarlo con el motor en otro namespace requiere remapeos explícitos.
+
+% ------------------------------------------------------------
+\subsection{Ejemplo de interpretación y expansión}
+Se utiliza el comando:
+\begin{quote}
+    \textit{Go to the kitchen, find a coke, and bring it to me.}
+\end{quote}
+Para este ejemplo, la salida semántica proporcionada es:
+\begin{verbatim}
+{
+  "input": "Go to the kitchen, find a coke, and bring it to me.",
+  "goals": [
+    "go(kitchen)",
+    "find(apple, kind=object)",
+    "take(apple)",
+    "deliver(apple, to=me)"
+  ]
+}
+\end{verbatim}
+
+\textbf{Observación sobre la interpretación}: el comando solicita \texttt{coke}, mientras las metas recibidas indican \texttt{apple}. Se conserva esa salida para mostrar el comportamiento del flujo: CLIPS planea sobre las metas recibidas y no corrige por sí mismo la discrepancia con el texto original. En este caso el plan buscaría, tomaría y entregaría una manzana. La fidelidad de la interpretación debe comprobarse antes de autorizar la ejecución.
+
+El conversor asigna los pasos 1 a 4 y clasifica \texttt{kitchen} como ubicación y \texttt{apple} como objeto. El campo \texttt{kind=object} del ejemplo no se usa como relación: la clasificación se infiere a partir de las metas. Por ejemplo, la segunda meta produce:
+\begin{verbatim}
+(gpsr-goal (step 2) (name find) (target "apple")
+  (kind object) (destination "") (relation "")
+  (value "") (qualifier ""))
+\end{verbatim}
+
+Con manipulación habilitada, la expansión de las metas incluye navegar a \texttt{kitchen}, buscar \texttt{apple\_1} y tomarlo. La entrega a \texttt{me} se traduce en regresar a \texttt{instruction\_point}, aproximarse a \texttt{host\_1} y entregar \texttt{apple\_1}. Un extracto ilustrativo de las acciones operativas, omitiendo anuncios y numeración, es:
+\begin{verbatim}
+Justina go_to kitchen
+Justina find_object apple_1
+Justina take apple_1
+Justina go_to instruction_point
+Justina approach host_1
+Justina give apple_1
+\end{verbatim}
+El plan completo agrega mensajes hablados, marcas de inicio y fin y, según las reglas y el contexto, otras acciones de apoyo.
+
+% ------------------------------------------------------------
+\subsection{Lanzamiento y prueba del flujo}
+El lanzamiento integrado inicia \texttt{clips\_node}, \texttt{qwen\_semantic\_node} y, por defecto, \texttt{goals\_to\_clips\_node} y \texttt{entity\_extractor\_node}. No inicia el servidor HTTP Qwen, el listener de voz, el gestor de instrucciones ni el Executor. Las dependencias principales incluyen ROS~2, Clipspy, \texttt{httpx}, PyYAML, las interfaces ROS y los recursos de \texttt{knowledge\_bank}; la biblioteca utiliza C++17.
+
+Los parámetros principales del launch son \texttt{plan\_name=goals}, \texttt{qwen\_response\_format=goals}, \texttt{qwen\_timeout\_sec=5.0}, \texttt{gpsr\_listen\_timeout\_sec=30.0}, \texttt{use\_goals\_to\_clips=true}, \texttt{use\_entity\_extractor=true} y \texttt{clips\_output=log}. La URL se proporciona mediante \texttt{qwen\_url} o \texttt{QWEN\_SERVER\_URL}, con valor de respaldo \texttt{http://127.0.0.1:8008}; la clave opcional puede configurarse con \texttt{QWEN\_API\_KEY}. El único formato de respuesta admitido es \texttt{goals}.
+
+Con los paquetes compilados, el entorno cargado y el servidor Qwen accesible, iniciar:
+\begin{verbatim}
+ros2 launch planning_tools planning.launch.xml plan_name:=goals
+\end{verbatim}
+En otra terminal con el mismo entorno, probar:
+\begin{verbatim}
+ros2 run planning_tools qwen_to_plan.py \
+  "Go to the kitchen, find a coke, and bring it to me."
+\end{verbatim}
+El script muestra la respuesta de Qwen, la respuesta del conversor y el plan generado. Las metas efectivamente obtenidas dependen del servidor; las cuatro metas anteriores constituyen la salida proporcionada para documentar el ejemplo. Para probar exactamente esas metas sin depender de Qwen, puede enviarse su objeto JSON directamente al servicio de conversión, en el campo \texttt{data}.
+
+El script termina con código 0 al recibir un plan no vacío y con código 1 si falla alguna etapa. Esto comprueba la generación y recepción del plan, no su corrección semántica ni su ejecución física. La respuesta \texttt{OK} del conversor debe distinguirse de la recepción del plan y del éxito de las acciones. El tópico puede observarse mediante:
+\begin{verbatim}
+ros2 topic echo /planning/clips/results
+\end{verbatim}
+
+% ------------------------------------------------------------
+\subsection{Entrega de instrucciones, limitaciones y extensión}
+\texttt{plan\_manager\_node} se conserva como gestor independiente y no se inicia desde \texttt{planning.launch.xml}. Se suscribe originalmente a \texttt{/clips/results}, elimina el prefijo \texttt{Paso N:}, almacena las instrucciones y entrega una por llamada a \texttt{/request\_instruction}, publicándola además en \texttt{/instruction\_msg}. Sin plan activo responde \texttt{success=false} y \texttt{NoPlanAssigned}. Entregar la última instrucción no confirma su ejecución.
+
+Para conectarlo al lanzamiento integrado y al cliente \texttt{Planning::requestInstruction()}, se requieren los siguientes remapeos:
+\begin{verbatim}
+ros2 run plan_manager_node plan_manager_node --ros-args \
+  -r /clips/results:=/planning/clips/results \
+  -r /request_instruction:=/planning/request_instruction \
+  -r /instruction_msg:=/planning/instruction_msg
+\end{verbatim}
+En el despliegue con \texttt{supervisor\_plan\_node}, la gestión corresponde al Supervisor. Su servicio \texttt{/request\_instruction} debe alinearse con el destino \texttt{/planning/request\_instruction} del cliente si se utiliza esta biblioteca. El gestor de CLIPS y el Supervisor representan configuraciones de gestión que deben conectarse explícitamente según el despliegue.
+
+Las solicitudes de conversión reinician la memoria de trabajo de CLIPS. Aunque las operaciones del motor se serializan, el flujo de prueba no utiliza un identificador que correlacione un comando con su plan publicado; las pruebas deben realizarse sin otras solicitudes concurrentes. Los errores del parser, del conversor y los tiempos de espera deben comprobarse en cada etapa.
+
+Para agregar una meta, se debe definir su análisis y normalización en \texttt{GoalParser}, construir los campos necesarios de \texttt{gpsr-goal} y agregar una regla que consuma la meta de menor paso y genere acciones compatibles con el Executor. El detalle de templates, funciones y reglas está en \texttt{clips/docs/goals\_planning\_rules.md}. El flujo vigente utiliza metas JSON; los conversores de Dependencia Conceptual, el parser spaCy y los métodos antiguos asociados fueron retirados.
+
+\endgroup
 
 % ============================================================
 % SUPERVISOR
