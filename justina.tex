@@ -19,37 +19,25 @@ Estos módulos se ejecutan en dos computadoras comunicadas vía Ethernet, forman
 El módulo \textit{Planning} traduce comandos en lenguaje natural o metas estructuradas en un plan ejecutable de instrucciones. El procesamiento inicia en las herramientas de análisis semántico (\textit{semantic\_parser}) y concluye en el motor de reglas CLIPS (\texttt{clips\_node}), el cual publica la secuencia de acciones resultante en \texttt{/planning/clips/results} para su posterior gestión por el módulo \textit{Supervisor}.
 
 % ------------------------------------------------------------
-\subsection{Paquete \texttt{clips\_node} (Python)}
+
+\subsection{Paquete \texttt{planning\_tools}}
+Funciona como la fachada principal (clase \texttt{Planning}) y aloja el archivo \textit{launch} raíz del módulo (\texttt{planning.launch.xml}). No contiene nodos ejecutables persistentes propios, pero agrupa las llamadas del cliente a los servicios de todo el módulo.
+
+\textit{Anomalías detectadas}: Los métodos \texttt{interpretToClips()} y \texttt{requestInstruction()} hacen referencia a servicios cuyos servidores no están activos en el despliegue actual (\texttt{natural\_to\_clips.py} inactivo y discrepancia en el \textit{namespace} de \texttt{supervisor\_plan\_node}).
+
+% ------------------------------------------------------------
+\subsection{Paquete \texttt{clips\_node}}
 Proporciona la envoltura para el motor de reglas CLIPS (mediante la librería \texttt{clips}) y las utilidades de conversión de metas.
 
 \begin{enumerate}
     \item \textbf{clips\_node}: \\
     Motor principal de planeación. Carga el conjunto de reglas definido por el parámetro \texttt{plan\_name} (correspondiente a categorías de prueba de RoboCup@Home como \texttt{gpsr\_planning}, \texttt{restaurant\_planning}, entre otros) y ejecuta la inferencia en un hilo independiente para evitar el bloqueo del ejecutor de ROS~2.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/planning/clips/results} (\texttt{std\_msgs/String}).
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/planning/clips/start\_planning}, \\
-        \texttt{/planning/clips/assert\_fact}, \\
-        \texttt{/planning/clips/assert\_facts\_batch}.
-    \end{itemize}
 
     \item \textbf{goals\_to\_clips\_node}: \\
     (Nombre interno: \texttt{goals\_to\_clips}) Convierte una lista JSON de metas \texttt{goal(args)} en hechos CLIPS, realizándolo en lote antes de disparar la planeación.
-    \begin{itemize}
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/planning/goals\_to\_clips/convert}.
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{/planning/clips/assert\_facts\_batch}, \\
-        \texttt{/planning/clips/start\_planning}.
-    \end{itemize}
 
     \item \textbf{natural\_to\_clips.py}: \\
     \textbf{Estado}: Ejecutable instalado pero huérfano (sin referencias en archivos \textit{launch}). Traduciría oraciones libres a hechos CLIPS.
-    \begin{itemize}
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/hri/listener/natural\_to\_clips/interpret}.
-    \end{itemize}
 \end{enumerate}
 
 % ------------------------------------------------------------
@@ -59,29 +47,13 @@ Ofrece capacidades de comprensión de lenguaje natural para la interpretación d
 \begin{enumerate}
     \item \textbf{qwen\_semantic\_node}: \\
     Consulta un servidor HTTP externo basado en el modelo Qwen para transformar comandos transcritos en metas estructuradas.
-    \begin{itemize}
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/planning/semantic\_parser/semantic\_parser}, \\
-        \texttt{/planning/semantic\_parser/listen\_gpsr}.
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{/hri/listener/listen}.
-    \end{itemize}
 
     \item \textbf{semantic\_node}: \\
     Analiza oraciones mediante un \textit{pipeline} de spaCy (\texttt{en\_core\_web\_trf}) para generar representaciones semánticas estructuradas. \\
     \textbf{Anomalía de despliegue}: El archivo \texttt{semantic\_parser.launch.xml} instancia este nodo dos veces de forma simultánea. Esto genera una colisión de nombres de nodo e interfiere con el servicio registrado por \texttt{qwen\_semantic\_node}.
-    \begin{itemize}
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/planning/semantic\_parser/semantic\_parser\_spacy}, \\
-        \texttt{/planning/semantic\_parser/semantic\_parser}.
-    \end{itemize}
 
     \item \textbf{entity\_extractor\_node}: \\
     Identifica y extrae entidades nombradas consultando directamente los diccionarios del paquete \texttt{knowledge\_bank}.
-    \begin{itemize}
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/planning/semantic\_parser/extract\_entity}.
-    \end{itemize}
 \end{enumerate}
 
 % ------------------------------------------------------------
@@ -91,20 +63,7 @@ Convierte la descripción de una primitiva en hechos CLIPS contextualizados con 
 \begin{enumerate}
     \item \textbf{primitive\_to\_clips\_node}: \\
     \textbf{Estado}: Inactivo (comentado en \texttt{clips.launch.xml}).
-    \begin{itemize}
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/planning/primitive\_to\_clips/convert}.
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{/planning/clips/assert\_facts\_batch}, \\
-        \texttt{/planning/clips/start\_planning}.
-    \end{itemize}
 \end{enumerate}
-
-% ------------------------------------------------------------
-\subsection{Paquete \texttt{planning\_tools} (C++)}
-Funciona como la fachada principal (clase \texttt{Planning}) y aloja el archivo \textit{launch} raíz del módulo (\texttt{planning.launch.xml}). No contiene nodos ejecutables persistentes propios, pero agrupa las llamadas del cliente a los servicios de todo el módulo.
-
-\textit{Anomalías detectadas}: Los métodos \texttt{interpretToClips()} y \texttt{requestInstruction()} hacen referencia a servicios cuyos servidores no están activos en el despliegue actual (\texttt{natural\_to\_clips.py} inactivo y discrepancia en el \textit{namespace} de \texttt{supervisor\_plan\_node}).
 
 % ------------------------------------------------------------
 \subsection{Paquetes de soporte y código de depuración}
@@ -135,20 +94,6 @@ Recibe el plan serializado publicado por CLIPS (\texttt{/planning/clips/results}
 \begin{enumerate}
     \item \textbf{supervisor\_plan\_node}: \\
     Mantiene la cola de instrucciones del plan activo y gestiona el despacho bajo demanda.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/instruction\_msg} (\texttt{std\_msgs/String}), \\
-        \texttt{/supervisor/supervisor\_plan/active} (\texttt{std\_msgs/Bool}), \\
-        \texttt{/supervisor/supervisor\_plan/plan\_ready} (\texttt{std\_msgs/Empty}).
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{/planning/clips/results}, \\
-        \texttt{/supervisor/supervisor\_manager/instruction}, \\
-        \texttt{/supervisor/supervisor\_manager/instruction\_command}, \\
-        \texttt{/supervisor/supervisor\_manager/allow\_plan\_instruction}, \\
-        \texttt{/supervisor/supervisor\_plan/rewind\_one}.
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/request\_instruction}.
-    \end{itemize}
 \end{enumerate}
 
 % ------------------------------------------------------------
@@ -158,15 +103,6 @@ Valida y clasifica el resultado de cada tarea reportada por \texttt{executor\_ma
 \begin{enumerate}
     \item \textbf{supervisor\_execution\_node}: \\
     Autoriza y clasifica la ejecución de tareas descolgando hacia el validador de la acción correspondiente y emite el pulso de disparo hacia el Executor.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/input\_trigger} (\texttt{std\_msgs/Empty}), \\
-        \texttt{/supervisor/supervisor\_execution/result} (\texttt{TaskExecutionReport}).
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{/supervisor/supervisor\_manager/allow\_next\_instruction}.
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/supervisor/supervisor\_executor/authorize}.
-    \end{itemize}
 \end{enumerate}
 
 % ------------------------------------------------------------
@@ -176,25 +112,6 @@ Coordinador de alto nivel del módulo. Incorpora la política de recuperación P
 \begin{enumerate}
     \item \textbf{supervisor\_manager\_node}: \\
     \textbf{Estado}: Inactivo (comentado en \texttt{supervisor.launch.xml}).
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/supervisor/supervisor\_plan/rewind\_one}, \\
-        \texttt{/supervisor/supervisor\_manager/allow\_next\_instruction}, \\
-        \texttt{/supervisor/supervisor\_manager/allow\_plan\_instruction}, \\
-        \texttt{/supervisor/supervisor\_manager/instruction\_command}, \\
-        \texttt{/supervisor/supervisor\_manager/instruction}.
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{/system/status}, \\
-        \texttt{/supervisor/supervisor\_execution/result}, \\
-        \texttt{/supervisor/supervisor\_plan/active}, \\
-        \texttt{/supervisor/supervisor\_plan/plan\_ready}, \\
-        \texttt{/instruction\_msg}.
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{/hri/talker/talk}, \\
-        \texttt{/hri/listener/listen}, \\
-        \texttt{/nav\_controller/go\_to\_location}, \\
-        \texttt{/hardware/head/move\_head}.
-    \end{itemize}
 \end{enumerate}
 
 % ------------------------------------------------------------
@@ -205,10 +122,6 @@ Monitorea la salud global del sistema emitiendo el estado operativo de los subsi
     \item \textbf{supervisor\_system\_node}: \\
     (Nombre interno del nodo: \texttt{system\_status\_publisher}) \\
     \textbf{Limitación de implementación}: El nodo no inspecciona activamente el grafo de ROS~2 ni verifica procesos vivos; publica de forma fija (\textit{hardcoded}) un estado saludable para todos los módulos cada segundo.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/system/status}.
-    \end{itemize}
 \end{enumerate}
 
 % ------------------------------------------------------------
@@ -220,74 +133,105 @@ Paquete de orquestación (sólo archivos \textit{launch}) que centraliza el arra
 % ============================================================
 
 \section[Executor]{Executor}
-\label{app:justina_executor}
+\label{sec:justina_executor}
 
-El módulo \textit{Executor} ejecuta secuencialmente las instrucciones del plan entregado por \textit{Planning}/\textit{Supervisor}. Se encarga de solicitar cada instrucción, traducirla a una meta de acción concreta y despachar su ejecución mediante máquinas de estados finitos (FSM) que orquestan las capacidades del robot (navegación, manipulación, HRI, visión y hardware), reportando el resultado de vuelta al Supervisor.
+El módulo \textit{Executor} es la capa intermedia encargada de la ejecución secuencial de las instrucciones generadas por la planificación simbólica (\textit{Planning/Supervisor}). Su objetivo primordial es desacoplar el razonamiento deliberativo de alto nivel (en CLIPS) de la ejecución física de las primitivas de acción (navegación, visión, manipulación y HRI). 
+
+Arquitectónicamente, se divide en dos componentes cooperativos: un despachador reactivo (\texttt{executor\_manager}) que gestiona las peticiones de instrucciones y su autorización, y un servidor de ejecución distribuida (\texttt{executor\_worker}) que delega el movimiento físico a máquinas de estados finitos (FSM) modularizadas en la librería \texttt{executor\_tools}.
+
+% ------------------------------------------------------------
+\subsection{Paquete \texttt{executor\_tools} (Librería FSM)}
+\label{subsec:executor_tools}
+
+El paquete \texttt{executor\_tools} es una biblioteca de clases en C++ que encapsula el comportamiento reactivo de Justina mediante máquinas de estados finitos (FSM). Cada herramienta implementa la interfaz común \texttt{run(argument, goal\_handle)}, reporta retroalimentación periódica (\textit{feedback}) y retorna un objeto \texttt{Result} uniforme (\texttt{success}, \texttt{status}, \texttt{message}) al despachador del trabajador.
+
+\subsubsection{Resumen Funcional de Primitivas}
+
+\begin{itemize}
+    \item \textbf{\texttt{Take} / \texttt{VisualGraspApproach}}: Ejecuta la prensión cinemática de objetos en mesas o repisas planificando trayectorias con MoveIt!. Genera candidatos de aproximación frontal o cenital, reordena la secuencia articular (hombro/codo $\to$ muñeca $\to$ torso), aplica corrección en lazo cerrado por servovisual con la base móvil y repliega el brazo invirtiendo analíticamente la trayectoria.
+    
+    \item \textbf{\texttt{VerifyTake}}: Inspección visual post-manipulación con OWL-ViT v2. Compara la escena actual contra la pose previa registrada en \texttt{Knowledge}; si el objeto aún se detecta en la superficie, limpia la asignación de la mano del robot y emite un fallo de prensión.
+
+    \item \textbf{\texttt{Drop}}: Coloca objetos en mesas, estantes, contenedores o en el suelo (\texttt{floor}). Consume la pose calculada por \texttt{FindSpace} o \texttt{Knowledge}, planifica la aproximación con orientación de herramienta fija ($q_y = -0.707, q_w = 0.707$), abre el \textit{gripper} y retrae el brazo respetando prismas de exclusión para no colisionar con el objeto liberado.
+
+    \item \textbf{\texttt{FindSpace}}: Segmenta la nube de puntos RGB-D activando servicios dedicados para mesa, contenedor o estante. Valida límites volumétricos en \path{base_link}, descarta transformadas obsoletas y almacena la entidad \texttt{safe\_drop/1} con su pose global en \path{map} y su meta de aproximación relativa.
+
+    \item \textbf{\texttt{Give}}: Transfiere un objeto a una persona. Identifica qué mano sostiene el artículo solicitado, extiende el brazo hacia adelante, enuncia un conteo regresivo por voz, abre el efector final, espera $2\,\text{s}$ para el relevo manual y actualiza la vacancia de la mano en \texttt{Knowledge}.
+
+    \item \textbf{\texttt{Receive}}: Recibe un objeto de un usuario. Verifica qué brazo se encuentra disponible (priorizando el izquierdo), extiende la extremidad con el \textit{gripper} abierto, solicita verbalmente la entrega, cierra la pinza tras una pausa y actualiza la posesión del objeto en el modelo del mundo.
+
+    \item \textbf{\texttt{FindObject}}: Barrido sensorial de la cabeza para localizar objetos o mobiliario. Soporta consultas de asientos libres (\texttt{"seat"}) y detección abierta con OWL-ViT v2. Centra el eje óptico sobre el blanco mediante \path{hardware_->LookAt()} y actualiza las coordenadas de manipulación (3D) y navegación (2D).
+
+    \item \textbf{\texttt{FindPerson}}: Barrido visual para localización y seguimiento facial de personas. Estabiliza activamente los servos del cuello (\texttt{waitForHeadStable}), centra el rostro en el encuadre óptico mediante control en lazo cerrado e interactúa con el reconocedor facial para identificar usuarios conocidos o registrar dinámicamente nuevos invitados (\texttt{guest\_<id>}).
+
+    \item \textbf{\texttt{FindPose}}: Detecta posturas humanas (sentado, apuntando, mano alzada). Proyecta una pose de aproximación escalada al $95\%$ para no invadir el espacio personal y registra la coordenada en el búfer compartido \texttt{customer\_pose\_map\_} en marco \path{map}.
+
+    \item \textbf{\texttt{Align}}: Controlador proporcional angular a $20\,\text{Hz}$ ($k_p = 0.025$, banda $[0.04, 0.20]\,\text{rad/s}$) para orientar la base del robot paralelamente al borde de mesas o de cara a contenedores, exigiendo 3 muestras consecutivas bajo $1.5^\circ$ de error.
+
+    \item \textbf{\texttt{Focus}}: Conmuta el seguimiento y fijación visual continua en el subsistema de visión mediante banderas booleanas.
+
+    \item \textbf{\texttt{AnalyzeObjects}}: Aplica razonamiento visual sobre objetos en mesas. Implementa conteo acumulado (\texttt{count}), comparación cardinal entre clases (\texttt{compare}) y filtrado por tamaño (\texttt{size}) o color (\texttt{color}), registrando la pose de la instancia elegida para habilitar su prensión inmediata con \texttt{Take}.
+
+    \item \textbf{\texttt{AnalyzePerson}}: Inspecciona personas en la escena evaluando color de vestimenta, gestos corporales dinámicos (\texttt{waving}, \texttt{pointing}, \texttt{raising}) o su combinación, generando una pose de aproximación hacia el individuo analizado.
+
+    \item \textbf{\texttt{Say}}: Orquesta la síntesis de voz (TTS) extrayendo frases parametrizadas del banco de \texttt{Knowledge}, resolviendo variables temporales (\texttt{day\_of\_week}) o instrucciones de guiado, sustituyendo guiones bajos por pausas naturales y ofreciendo respaldo directo sobre texto plano.
+
+    \item \textbf{\texttt{Listen}}: Captura comandos de voz (ASR) en dos modalidades: modo simple (palabra clave directa) y modo completo (\texttt{<categoría>\_<atributo>\_<índice>}), extrayendo entidades semánticas con hasta 3 reintentos para registrar en \texttt{Knowledge}.
+
+    \item \textbf{\texttt{Point}}: Rota la base móvil para absorber el ángulo de paneo de la cabeza mientras suaviza el cuello a cero mediante filtrado exponencial ($\alpha = 0.1$) y extiende el brazo izquierdo para señalar un objetivo.
+
+    \item \textbf{\texttt{Check}}: Verifica condiciones físicas discretas del entorno mediante sensores de hardware, principalmente el estado abierto o cerrado de puertas de acceso (\texttt{CheckDoorState}).
+
+    \item \textbf{\texttt{Follow}}: Conmuta el servicio de rastreo de personas en lazo cerrado gestionado por la capa de HRI.
+
+    \item \textbf{\texttt{GoTo}}: Desplaza la base hacia coordenadas topológicas predefinidas en el mapa global invocando la navegación detallada.
+
+    \item \textbf{\texttt{Approach}}: Aproximación semántica hacia personas u objetos. Proyecta poses locales (\path{base_link}) a globales (\path{map}), frena el controlador cinemático al entrar en tolerancia por TF, aplica corrección residual para colocación (\texttt{safe\_drop}) y desplaza la base lateralmente ($\pm 0.15\,\text{m}$) para alinear el hombro que ejecutará la acción. En modo parcial, mantiene un margen de respeto de $0.75\,\text{m}$ frente al usuario.
+
+    \item \textbf{\texttt{SaveLoc}}: Registra ubicaciones topológicas en el gestor de mapas, interceptando casos especiales como puntos de retorno a clientes, avances con desfase angular de $+90^\circ$ (\texttt{kitchen\_bar}) o poses de calibración inicial para el filtro AMCL.
+
+    \item \textbf{\texttt{Fold}}: Coreografía bimanual para el doblado de prendas sobre mesas. Identifica puntos clave visuales, repliega secuencialmente ambas mangas hacia el interior, toma el dobladillo inferior y avanza linealmente la base ($0.15\,\text{m}$ a $0.08\,\text{m/s}$) para depositar la mitad inferior sobre la prenda.
+\end{itemize}
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{executor\_manager}}
-Funciona como puente entre el \textit{Supervisor} y la capa de ejecución física. Solicita la instrucción, convierte el texto crudo (p. ej. \textit{"Justina goto table"}) en una meta estructurada de acción, la despacha y gestiona el ciclo de vida de la tarea (transición al siguiente paso, salto por rechazo o reintento configurable hasta \texttt{MAX\_RETRIES}).
+\label{subsec:executor_manager}
+
+Actúa como el orquestador y puente de comunicación entre el \textit{Supervisor} y los trabajadores físicos. Implementa un lazo cerrado asíncrono regulado por pulsos: solicita la instrucción textual activa, la deserializa en estructuras formales de ROS~2, despacha la meta al \textit{Worker} correspondiente y somete el resultado obtenido a un proceso de validación y autorización con el Supervisor antes de permitir el avance del plan.
 
 \begin{enumerate}
     \item \textbf{executor\_manager\_node}: \\
-    Orquesta el flujo de ejecución del plan y reacciona a los estados devueltos por el servidor de acciones (\texttt{SUCCEEDED}, \texttt{REJECTED}, \texttt{FAILURE}, \texttt{ABORTED}).
+    Nodo orquestador reactivo. Su flujo de ejecución se rige bajo las siguientes fases:
     \begin{itemize}
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{/input\_trigger} (\texttt{std\_msgs/Empty}).
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{/request\_instruction}, \\
-        \texttt{/supervisor/supervisor\_executor/authorize}.
-        \item \textbf{Acciones utilizadas}: \\
-        \texttt{/executor/execute\_task} (\texttt{executor\_interfaces/action/ExecuteTask}).
+        \item \textbf{Disparo (\textit{Triggering})}: Permanece inactivo hasta recibir un pulso en el tópico \path{/input_trigger}. Si no existe una acción previa en curso, desbloquea la petición de tareas.
+        \item \textbf{Adquisición y Parseo}: Consulta el servicio \path{/request_instruction}. Si la respuesta es denegada por sincronización interna (\texttt{blocked\_by\_manager}), activa un temporizador de pared (\textit{wall timer}) a $200\,\text{ms}$ para reintentar la solicitud. Al recibir una instrucción válida (formato: \textit{"<agent> <action> <argumentos>"}), divide la cadena en tokens: asigna el agente, convierte la acción estrictamente a minúsculas y concatena los argumentos restantes en el arreglo \texttt{args} de un mensaje \texttt{TaskStep}.
+        \item \textbf{Despacho de Acción}: Empaqueta el \texttt{TaskStep} dentro de una meta del tipo de acción \texttt{ExecuteTask} y la despacha al servidor \path{/executor/execute_task}. Escucha asíncronamente el progreso (\textit{feedback}) y el resultado final emitido por el trabajador.
+        \item \textbf{Ciclo de Autorización}: Al concluir la tarea (sea en estado \texttt{SUCCESS} o \texttt{FAILED}), el nodo envía la acción, su argumento y el mensaje de retorno del trabajador al servicio \path{/supervisor/supervisor_executor/authorize}. El nodo concluye su intervención en espera del siguiente pulso externo del Supervisor, delegando la decisión de bifurcación o continuación del plan a la capa deliberativa superior.
     \end{itemize}
+
 \end{enumerate}
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{executor\_worker}}
-Capa de ejecución física que expone el servidor de acciones de ROS~2. Sigue una política de \textit{"accept-to-report"} (acepta incluso metas inválidas para notificar formalmente el rechazo al Supervisor) y despacha cada tarea aceptada en un hilo independiente para evitar el bloqueo del nodo.
+\label{subsec:executor_worker}
+
+Constituye la capa de ejecución física y despacho dinámico de tareas. Expone el servidor de acciones principal de ROS~2 y desacopla la recepción de peticiones del procesamiento cinemático y sensorial mediante hilos de trabajo independientes. 
+
+Su diseño implementa el patrón despachador (\textit{Dispatcher}) basado en una tabla de dispersión (\texttt{actionMap\_}) que vincula cadenas de texto con clausuras (\textit{lambdas}) tipadas, aislando el ciclo de vida de cada máquina de estados finitos (FSM).
 
 \begin{enumerate}
     \item \textbf{executor\_worker\_node}: \\
-    Mapea el campo de acción recibido hacia la clase FSM correspondiente en \texttt{executor\_tools}.
+    Servidor de acciones y gestor de ciclo de vida de herramientas. Su operación interna se caracteriza por:
     \begin{itemize}
-        \item \textbf{Acciones ofrecidas}: \\
-        \texttt{/executor/execute\_task} (\texttt{executor\_interfaces/action/ExecuteTask}).
+        \item \textbf{Política de Aceptación Incondicional (\textit{Accept-to-Report})}: El manejador \texttt{handleGoal} acepta cualquier meta entrante (\texttt{ACCEPT\_AND\_EXECUTE}). Si una acción es desconocida, malformada o no soportada, no se rechaza a nivel de transporte ROS~2, sino que se ejecuta para devolver un mensaje estructurado de fallo formal (\texttt{TaskResult::FAILURE}) con el detalle del error, permitiendo al \textit{Supervisor} diagnosticar la causa.
+        \item \textbf{Concurrencia sin Bloqueo}: Al ser aceptada una meta (\texttt{handleAccepted}), el nodo delega la ejecución de la FSM a un hilo desacoplado mediante \texttt{std::thread(...).detach()}. Esto mantiene libre el ejecutor de ROS~2 para continuar atendiendo callbacks de diagnóstico, cancelaciones y publicación de tópicos.
+        \item \textbf{Aislamiento y Manejo de Excepciones}: El despachador envuelve la ejecución en un bloque \texttt{try-catch} jerárquico. Cualquier excepción de hardware o puntero nulo lanzada por las librerías \texttt{*\_tools} es interceptada, transformando el error en un resultado \texttt{FAILED} con la traza de la excepción y previniendo la caída del proceso.
     \end{itemize}
+
 \end{enumerate}
 
 % ------------------------------------------------------------
-\subsection{Paquete \texttt{executor\_tools} (Librería FSM)}
-Librería C++ de máquinas de estado finitos que encapsulan las primitivas de acción del robot. Cada FSM se comunica con las librerías \texttt{*\_tools} de otros módulos y devuelve un objeto \texttt{Result} uniforme (\texttt{success}, \texttt{state}, \texttt{message}). 
-
-Las primitivas registradas en el despachador (\texttt{actionMap}) son:
-
-\begin{itemize}
-    \item \texttt{say} (\texttt{Say}): Pronuncia una frase del banco de conocimiento mediante sintetizador de voz (TTS).
-    \item \texttt{listen} (\texttt{Listen}): Captura audio, extrae entidades nombradas y actualiza el estado del mundo.
-    \item \texttt{go\_to} (\texttt{GoTo}): Ajusta la altura del torso y navega a una ubicación nombrada.
-    \item \texttt{check} (\texttt{Check}): Verifica el estado de un componente de hardware o sensor (p. ej. estado de una puerta).
-    \item \texttt{point} (\texttt{Point}): Alinea la base y la cabeza hacia un objetivo y extiende el brazo para señalarlo.
-    \item \texttt{give} (\texttt{Give}): Extiende el brazo que sostiene un objeto y abre el \textit{gripper} tras confirmar la recepción.
-    \item \texttt{receive} (\texttt{Receive}): Extiende el brazo con el \textit{gripper} abierto y lo cierra al detectar el objeto entregado por una persona.
-    \item \texttt{take} (\texttt{Take}): FSM principal de agarre. Ejecuta la aproximación visual fina mediante la clase de soporte \texttt{VisualGraspApproach} (cálculo de candidatos \texttt{FRONT}/\texttt{TOP} y corrección por TF del marcador), planea con \texttt{manipulation\_tools}, cierra el \textit{gripper} y retrae la trayectoria.
-    \item \texttt{verify\_take} (\texttt{VerifyTake}): Confirma por visión la presencia del objeto tras la maniobra de agarre.
-    \item \texttt{drop} (\texttt{Drop}): Consume una TF de espacio seguro producida por \texttt{FindSpace} y deposita el objeto.
-    \item \texttt{find\_space} (\texttt{FindSpace}): Localiza y valida una TF de espacio libre sobre superficies (mesas, repisas) para depositar objetos.
-    \item \texttt{find\_object} (\texttt{FindObject}): Escanea con la cabeza, detecta objetos por visión y actualiza su pose en el mundo.
-    \item \texttt{find\_person} (\texttt{FindPerson}): Detecta, localiza e identifica a una persona, actualizando su registro en el estado del mundo.
-    \item \texttt{find\_pose} (\texttt{FindPose}): Detecta la postura de una persona y la almacena en un búfer compartido.
-    \item \texttt{approach} / \texttt{approach\_partial} (\texttt{Approach}): Aproxima al robot a una persona u objeto. La variante \texttt{approach\_partial} invoca \texttt{runPartial} para acercamientos controlados e incompletos.
-    \item \texttt{align} (\texttt{Align}): Alinea la base respecto a un objetivo visual mediante control en lazo cerrado.
-    \item \texttt{focus} (\texttt{Focus}): Centra la cámara de la cabeza en un objetivo previamente detectado.
-    \item \texttt{follow} (\texttt{Follow}): Habilita o deshabilita el servicio de seguimiento de personas.
-    \item \texttt{analyze\_objects} (\texttt{AnalyzeObjects}): Realiza análisis de conteo, tamaño o color en objetos detectados.
-    \item \texttt{analyze\_person} (\texttt{AnalyzePerson}): Analiza vestimenta o gestos de una persona.
-    \item \texttt{save\_loc} (\texttt{SaveLoc}): Guarda la pose actual o relativa del robot como una nueva ubicación nombrada.
-    \item \texttt{fold} (\texttt{Fold}): Dobla una prenda sobre una mesa en dos fases (mangas y base) guiándose por puntos clave de visión.
-\end{itemize}
-
-% ------------------------------------------------------------
-\subsection{Paquete \texttt{gui\_controller} (Herramienta de desarrollo)}
+\subsection{Paquete \texttt{gui\_controller}}
 Aplicación de escritorio desarrollada en PyQt5 para monitoreo y depuración durante el desarrollo. Permite lanzar, supervisar y detener procesos en el sistema.
 
 \begin{enumerate}
@@ -305,13 +249,25 @@ Aplicación de escritorio desarrollada en PyQt5 para monitoreo y depuración dur
 El módulo \textit{Knowledge} se encarga de mantener y exponer el estado del mundo del robot en tiempo de ejecución (personas, objetos, ubicaciones conocidas, atributos del robot y analítica de percepción). Asimismo, provee un banco de frases parametrizables que el módulo HRI utiliza para la generación de diálogo, resolviendo dinámicamente las referencias de dichas frases contra el estado del mundo actualizado.
 
 % ------------------------------------------------------------
+\subsection{Paquete \texttt{knowledge\_tools}}
+Librería C++ (clase \texttt{Knowledge}) que encapsula la interacción vía clientes de servicio de ROS~2 con \texttt{world\_state\_node} y \texttt{phrase\_manager\_node}. Permite a módulos externos (\textit{Executor}, \textit{Supervisor}, \textit{HRI}) consultar y actualizar el estado del mundo o solicitar frases resueltas sin necesidad de reimplementar la lógica de comunicación RPC ni el parseo de datos.
+
+\begin{itemize}
+	\item \texttt{get\_world\_state(category, id, attribute, timeout)}: recibe la categoría, el identificador y el atributo del elemento del mundo a consultar (todos opcionales, por defecto retornan el estado completo), y un tiempo máximo de espera; regresa un objeto \texttt{json} con el estado solicitado, o un \texttt{json} vacío si la llamada falla, expira el tiempo, o la respuesta no pudo parsearse.
+	\item \texttt{update\_world\_state(category, id, attribute, value, timeout)}: recibe la categoría, el identificador, el atributo a modificar, el nuevo valor y un tiempo máximo de espera; regresa un \texttt{bool} indicando si el servicio confirmó éxito.
+	\item \texttt{get\_phrase(phrase, context, timeout)}: recibe el identificador de la frase, el contexto de uso y un tiempo máximo de espera; regresa un \texttt{string} con el texto correspondiente, o vacío si falla o expira el tiempo.
+\end{itemize}
+
+\textit{Nota: \texttt{get\_world\_state} no distingue entre una consulta sin resultados, un fallo de comunicación (timeout o servicio no disponible) y un error al parsear la respuesta — los tres casos regresan un \texttt{json} vacío. El llamador no puede diferenciar estos escenarios únicamente a partir del valor de retorno.}
+
+% ------------------------------------------------------------
 \subsection{Paquete \texttt{knowledge\_bank}}
 Paquete de datos (sin nodos) que centraliza la configuración estática y el estado persistente. Contiene:
 \begin{itemize}
-    \item \textbf{Dominios estáticos}: \texttt{domains/locations.yaml}, \texttt{objects.yaml} y \texttt{people.yaml}.
-    \item \textbf{Banco de frases}: Organizado por contextos de pruebas en \texttt{phrases/} (\texttt{gpsr.yaml}, \texttt{hri.yaml}, \texttt{inspection.yaml}, \texttt{laundry.yaml}, \texttt{pnp.yaml}, \texttt{restaurant.yaml}).
-    \item \textbf{Vocabulario}: Diccionarios en \texttt{dictionaries/} (bebidas, nombres, objetos, órdenes).
-    \item \textbf{Estado en tiempo de ejecución}: \texttt{runtime/world.yaml}, archivo actualizado y persistido de forma continua.
+	\item \textbf{Dominios estáticos}: \texttt{domains/locations.yaml}, \texttt{objects.yaml} y \texttt{people.yaml}.
+	\item \textbf{Banco de frases}: Organizado por contextos de pruebas en \texttt{phrases/} (\texttt{gpsr.yaml}, \texttt{hri.yaml}, \texttt{inspection.yaml}, \texttt{laundry.yaml}, \texttt{pnp.yaml}, \texttt{restaurant.yaml}).
+	\item \textbf{Vocabulario}: Diccionarios en \texttt{dictionaries/} (bebidas, nombres, objetos, órdenes).
+	\item \textbf{Estado en tiempo de ejecución}: \texttt{runtime/world.yaml}, archivo actualizado y persistido de forma continua.
 \end{itemize}
 
 % ------------------------------------------------------------
@@ -319,27 +275,12 @@ Paquete de datos (sin nodos) que centraliza la configuración estática y el est
 Implementa los nodos ejecutables encargados de la gestión activa de la información y la resolución de diálogos.
 
 \begin{enumerate}
-    \item \textbf{world\_state\_node}: \\
-    Mantiene en memoria el estado del mundo (robot, ubicaciones, objetos, personas y analítica). Se inicializa a partir de los dominios de \texttt{knowledge\_bank} y persiste cada cambio en \texttt{runtime/world.yaml}. Atiende peticiones en grupos de callbacks independientes protegidos por un \textit{mutex} concurrente de lectura/escritura (permite múltiples lecturas simultáneas sin bloqueo).
-    \begin{itemize}
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/knowledge/knowledge\_manager/world/get\_state} (consulta filtrada por categoría, id y atributo; devuelve un objeto JSON serializado), \\
-        \texttt{/knowledge/knowledge\_manager/world/update\_state} (actualiza atributos de entidades y persiste el estado).
-    \end{itemize}
+	\item \textbf{world\_state\_node}: \\
+	      Mantiene en memoria el estado del mundo (robot, ubicaciones, objetos, personas y analítica). Se inicializa a partir de los dominios de \texttt{knowledge\_bank} y persiste cada cambio en \texttt{runtime/world.yaml}. Atiende peticiones en grupos de callbacks independientes protegidos por un \textit{mutex} concurrente de lectura/escritura (permite múltiples lecturas simultáneas sin bloqueo).
 
-    \item \textbf{phrase\_manager\_node}: \\
-    Carga las plantillas de diálogo desde \texttt{knowledge\_bank/phrases}. Al recibir una solicitud, selecciona una frase aleatoria para la clave especificada y resuelve dinámicamente sus comodines (\textit{placeholders}) con formato \texttt{\{categoria:atributo:id\}} o \texttt{categoria\_atributo[\_id]} consultando al estado del mundo.
-    \begin{itemize}
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/knowledge/knowledge\_manager/phrases/get\_phrase}.
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{/knowledge/knowledge\_manager/world/get\_state}.
-    \end{itemize}
+	\item \textbf{phrase\_manager\_node}: \\
+	      Carga las plantillas de diálogo desde \texttt{knowledge\_bank/phrases}. Al recibir una solicitud, selecciona una frase aleatoria para la clave especificada y resuelve dinámicamente sus comodines (\textit{placeholders}) con formato \texttt{\{categoria:atributo:id\}} o \texttt{categoria\_atributo[\_id]} consultando al estado del mundo.
 \end{enumerate}
-
-% ------------------------------------------------------------
-\subsection{Paquete \texttt{knowledge\_tools} (Librería cliente)}
-Librería C++ (clase \texttt{Knowledge}) que encapsula la interacción vía clientes de servicio de ROS~2 con \texttt{world\_state\_node} y \texttt{phrase\_manager\_node}. Permite a módulos externos (\textit{Executor}, \textit{Supervisor}, \textit{HRI}) consultar y actualizar el estado del mundo o solicitar frases resueltas sin necesidad de reimplementar la lógica de comunicación RPC ni el parseo de datos.
 
 % ============================================================
 % HRI
@@ -348,143 +289,73 @@ Librería C++ (clase \texttt{Knowledge}) que encapsula la interacción vía clie
 \section[HRI]{HRI}
 \label{app:justina_hri}
 
-El módulo \textit{HRI} (\textit{Human-Robot Interaction}) gestiona la interacción hablada (síntesis y reconocimiento de voz), la detección y seguimiento de personas, y la interfaz visual de operación del robot. Localiza a la persona objetivo combinando LiDAR (piernas) y visión (cuerpo), mantiene al robot orientado o navegando hacia ella durante el seguimiento, y expone estas capacidades mediante la librería \texttt{hri\_tools}. 
-
-A diferencia del resto del módulo, el paquete \texttt{gui} se ejecuta físicamente en la computadora embebida de la base Robotino~4 (repositorio \texttt{Robotino}) bajo el \textit{namespace} \texttt{/hardware}; se documenta aquí debido a su clasificación funcional en el repositorio y su rol como panel visual que consume tópicos de HRI y Vision.
+El módulo HRI es responsable de establecer y mantener la interacción directa entre Justina y una persona específica, mediante comunicación verbal y seguimiento de su posición. Utiliza Whisper para transcripción de voz y Piper para síntesis de voz, y combina las detecciones de YOLO con la nube de puntos de la cámara y el LiDAR de la base para detectar, localizar y seguir a la persona objetivo, ejecutando los desplazamientos mediante el sistema de navegación.
 
 % ------------------------------------------------------------
-\subsection{Paquete \texttt{hri\_tools} (Librería cliente y launch raíz)}
-Librería \textit{Facade} (clase \texttt{HRI}) que encapsula en llamadas síncronas los servicios asíncronos de Talker, Listener, seguimiento de personas y detección de gestos (utilizada por primitivas como \texttt{Say} y \texttt{Listen} de \texttt{executor\_tools}). Aloja el archivo \texttt{hri.launch.xml}, el cual lanza bajo el \textit{namespace} \texttt{/hri} a Talker, Listener, \texttt{human\_detector} y \texttt{human\_follower}.
+\subsection{Paquete \texttt{hri\_tools}}
+Proporciona las utilidades del módulo. Incluye la biblioteca \texttt{HRI}, que encapsula en llamadas síncronas las siguientes funciones, ocultando los detalles de comunicación asíncrona con los servicios de ROS 2:
+
+\begin{itemize}
+	\item \texttt{Say(text, timeout)}: recibe el texto a sintetizar y un tiempo máximo de espera; regresa un \texttt{bool} indicando si el servicio confirmó éxito.
+	\item \texttt{Listen(grammar, timeout)}: recibe opcionalmente el nombre de un archivo de gramática (vacío para reconocimiento libre) y un tiempo máximo de espera; regresa un \texttt{string} con el texto reconocido, o vacío si falla o expira el tiempo.
+	\item \texttt{FollowPerson(enable, timeout)}: recibe un \texttt{bool} para activar o desactivar el seguimiento y un tiempo máximo de espera; regresa un \texttt{bool} indicando si el servicio confirmó éxito.
+	\item \texttt{FindPose(action\_type, arm\_side, out\_direction, out\_point, timeout)}: recibe el tipo de acción a detectar (\texttt{wave}, \texttt{raising}, \texttt{pointing}), el brazo a evaluar (\texttt{left}, \texttt{right}, \texttt{any}) y un tiempo máximo de espera; devuelve por referencia la dirección detectada (\texttt{out\_direction}) y el punto 3D correspondiente (\texttt{out\_point}), y regresa un \texttt{bool} indicando si se detectó a la persona realizando la pose solicitada.
+\end{itemize}
+
+\textit{Nota: a diferencia de \texttt{Listen}, que ante un fallo regresa explícitamente un string vacío como valor definido, \texttt{FindPose} no garantiza un valor definido en \texttt{out\_direction} ni \texttt{out\_point} cuando \texttt{human\_detected} es falso — el llamador debe verificar siempre el valor de retorno \texttt{bool} antes de usar los parámetros de salida.}
+
+Asimismo, aloja el launch \texttt{hri.launch.xml}, encargado de levantar bajo el namespace \texttt{/hri} los nodos \texttt{Talker}, \texttt{Listener}, \texttt{human\_detector} y \texttt{human\_follower}, encargados de la comunicación por voz, detección y seguimiento de personas.
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{human\_detection} (\texttt{human\_detector})}
-Colección de nodos en Python basados en YOLO para detección y seguimiento de personas. 
+El paquete \texttt{human\_detection} contiene los nodos encargados de \textbf{detectar personas, estimar su posición y reconocer algunos movimientos del cuerpo} mediante visión.
+\subsubsection{\texttt{person\_tracker}}
+Este nodo combina las detecciones de YOLO con la información 3D de la cámara para calcular la posición de la persona objetivo. Con estos datos, Justina puede mantenerla localizada, orientar la cabeza hacia ella y proporcionar información útil para su seguimiento.
 
-\begin{enumerate}
-    \item \textbf{person\_tracker}: \\
-    Fusiona las detecciones de YOLO con la nube de puntos 3D de la cámara para estimar la posición tridimensional de la persona objetivo, orientar la cabeza del robot hacia ella y exponer el enfoque de visión como servicio.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/human\_detection/target\_point} (\texttt{geometry\_msgs/PointStamped}), \\
-        \texttt{/hri/human\_tracking/confidence} (\texttt{std\_msgs/Float32}), \\
-        \texttt{/hardware/head/look\_at} (\texttt{geometry\_msgs/PointStamped}), \\
-        \texttt{/human\_detection/track\_markers} (\texttt{visualization\_msgs/MarkerArray}), \\
-        \texttt{/navigation/camera\_obstacles/bypass} (\texttt{std\_msgs/Bool}).
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{/vision/detections\_list}, \\
-        \texttt{/hardware/camera/points} (nube de puntos).
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/vision/focus}, \texttt{/vision/focus/enable}, \texttt{/vision/focus/disable}.
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{/vision/enable\_continuous}.
-    \end{itemize}
-
-    \item \textbf{pose\_detector\_node} (\texttt{pose\_detector.py}): \\
-    \textbf{Nota de despliegue}: Corre en el sistema activo consumido por \texttt{HRI::FindPose}, pero se lanza desde el módulo \textit{Vision} (\texttt{vision.launch.xml}) y no desde \texttt{hri.launch.xml}. Detecta si una persona está saludando o apuntando con la muñeca.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/human\_detection/pose\_image\_wrist} (\texttt{sensor\_msgs/Image}).
-        \item \textbf{Tópicos suscritos}: \\
-        Imagen RGB, nube de puntos y \texttt{camera\_info} de la cámara.
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/human\_detection/detect\_wrist}.
-    \end{itemize}
-\end{enumerate}
+\subsubsection{\texttt{pose\_detector\_node} (\texttt{pose\_detector.py})}
+Este nodo detecta la \textbf{postura de una persona}, por ejemplo, si está saludando o apuntando con la mano. Aunque forma parte de \texttt{human\_detection}, se inicia desde \texttt{vision.launch.xml} y no desde \texttt{hri.launch.xml}.
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{human\_follower}}
-Pipeline de seguimiento de personas que combina la detección de piernas por LiDAR y la posición de cuerpo por visión mediante filtrado estocástico.
+El paquete \texttt{human\_follower} se encarga del \textbf{seguimiento de una persona mientras Justina se desplaza}. Para ello combina la detección de piernas obtenida mediante el LiDAR con la posición del cuerpo proporcionada por el sistema de visión.
 
-\begin{enumerate}
-    \item \textbf{leg\_finder\_node}: \\
-    Procesa el barrido láser de la base para identificar patrones geométricos correspondientes a piernas humanas.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/hri/leg\_finder/legs\_pose} (\texttt{geometry\_msgs/PoseArray}), \\
-        \texttt{/hri/leg\_finder/marker}.
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{/hardware/base/scan}, \\
-        \texttt{/hri/leg\_finder/enable} (\texttt{std\_msgs/Bool}).
-    \end{itemize}
+\subsubsection{\texttt{leg\_finder\_node}}
 
-    \item \textbf{human\_follower\_nodeV2}: \\
-    Fusiona mediante un filtro de Kalman de 4 estados la posición de las piernas (\texttt{leg\_finder\_node}) y del cuerpo (\texttt{person\_tracker}), publicando metas de navegación continuas para mantener una distancia fija respecto a la persona.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/nav\_control/goal}, \\
-        \texttt{/navigation/stop}, \\
-        \texttt{/hri/human\_follower/state}, \\
-        \texttt{/hri/human\_follower/debug\_fused\_point}.
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{/hri/human\_following/enable}, \\
-        \texttt{/hri/leg\_finder/legs\_pose}, \\
-        \texttt{/human\_detection/target\_point}.
-    \end{itemize}
+Este nodo procesa la información del LiDAR de la base para identificar patrones que puedan corresponder a \textbf{piernas humanas}.
 
-    \item \textbf{human\_tracking\_node}: \\
-    Coordinador de alto nivel e interruptor principal del seguimiento. Al activarse, habilita simultáneamente la visión continua, la detección de piernas y el seguidor de cuerpo, incorporando un \textit{watchdog} sobre la confianza de la estimación para desactivar el seguimiento si el objetivo se pierde.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/hri/human\_following/enable}, \\
-        \texttt{/hri/leg\_finder/enable}, \\
-        \texttt{/vision/enable\_continuous}, \\
-        \texttt{/hri/human\_tracking/state}.
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{/hri/human\_tracking/confidence}.
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/hri/human\_tracking/enable}.
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{/vision/focus/enable}, \texttt{/vision/focus/disable}.
-    \end{itemize}
-\end{enumerate}
+\subsubsection{\texttt{human\_follower\_nodeV2}}
+
+Este nodo combina la posición de las piernas obtenida por \texttt{leg\_finder\_node} con la posición del cuerpo obtenida por \texttt{person\_tracker}. Con esta información estima la ubicación de la persona y genera los comandos necesarios para que el robot la siga manteniendo una distancia determinada.
+
+\subsubsection{\texttt{human\_tracking\_node}}
+
+Este nodo funciona como \textbf{coordinador del seguimiento}. Al activarse, habilita los componentes necesarios para detectar y seguir a una persona, como la visión continua, la detección de piernas y \texttt{human\_follower\_nodeV2}.
+
+También supervisa la confianza del seguimiento. Si el sistema deja de detectar correctamente a la persona, puede desactivar el seguimiento para evitar que el robot continúe siguiendo una posición incorrecta.
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{listener}}
-Reconocimiento de voz automatizado (ASR).
+El paquete \texttt{listener} se encarga del \textbf{reconocimiento de voz}. Su función es escuchar al usuario mediante el micrófono del robot.
 
-\begin{enumerate}
-    \item \textbf{listener\_node}: \\
-    Captura audio local desde el micrófono físico, aplica Detección de Actividad de Voz (VAD) y realiza la transcripción mediante Whisper (restringido opcionalmente por gramáticas JSON según la prueba).
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/hsrb/gui/state}.
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/hri/listener/listen}.
-    \end{itemize}
-\end{enumerate}
+\subsubsection{\texttt{listener\_node}}
+
+Este nodo captura el audio del micrófono, detecta cuándo una persona está hablando y realiza la transcripción mediante Whisper. Dependiendo de la prueba, puede limitar las respuestas esperadas utilizando archivos de gramática en formato JSON.
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{talker}}
-Síntesis de voz (TTS).
+El paquete \texttt{talker} se encarga de la \textbf{síntesis de voz}, es decir, de convertir texto en audio para que Justina pueda hablar.
 
-\begin{enumerate}
-    \item \textbf{talker\_node}: \\
-    Sintetiza texto a señal de audio utilizando el motor Piper y reproduce la locución a través de los altavoces del robot.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/hsrb/gui/text}.
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/hri/talker/talk}.
-    \end{itemize}
-\end{enumerate}
+\subsubsection{\texttt{talker\_node}}
+
+Este nodo recibe el texto que debe decir el robot, lo convierte en una señal de audio utilizando Piper y lo reproduce mediante las bocinas.
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{gui} (Paquete ROS \texttt{justina\_gui})}
 Panel de operación en interfaz gráfica (PyQt) ejecutado en la computadora de la base Robotino~4 (lanzado en \texttt{justina\_hardware} bajo el \textit{namespace} \texttt{/hardware}).
 
 \begin{enumerate}
-    \item \textbf{gui\_node} (\texttt{justina\_gui\_node}): \\
-    Muestra en pantalla el estado operativo del robot durante pruebas (paro de emergencia, texto actual de síntesis/reconocimiento e imágenes de depuración de visión). Es un nodo únicamente suscriptor/visualizador.
-    \begin{itemize}
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{/navigation/navigation\_ctrl/stop}, \\
-        \texttt{/hsrb/gui/state}, \\
-        \texttt{/hsrb/gui/text}, \\
-        \texttt{/vision/owl/debug\_image}, \\
-        \texttt{/human\_detection/pose\_image\_wrist}, \\
-        \texttt{/face\_recog/debug\_image}, \\
-        \texttt{/vision/detect\_seats/debug\_image}.
-    \end{itemize}
+	\item \textbf{gui\_node} (\texttt{justina\_gui\_node}): \\
+	      Muestra en pantalla el estado operativo del robot durante pruebas (paro de emergencia, texto actual de síntesis/reconocimiento e imágenes de depuración de visión). Es un nodo únicamente suscriptor/visualizador.
 \end{enumerate}
 
 % ============================================================
@@ -494,7 +365,7 @@ Panel de operación en interfaz gráfica (PyQt) ejecutado en la computadora de l
 \section[Vision]{Vision}
 \label{app:justina_vision}
 
-El módulo \textit{Vision} gestiona la percepción visual del robot: detección de objetos 2D/3D (YOLO y OWLv2), analítica sobre detecciones (conteo, tamaño, color, comparación), reconocimiento e identificación facial, detección de asientos vacíos, alineación con mesas y localización de espacios de entrega (mesa/repisa/contenedor) para manipulación. Expone estas capacidades mediante la fachada \texttt{vision\_tools}. Es uno de los módulos con más nodos activos simultáneamente (14, todos bajo el \textit{namespace} \texttt{/vision}).
+El módulo \textit{Vision} implementa la capa de percepción visual del robot a traves de un stack de x nodos ROS~2 bajo el \textit{namespace} \texttt{/vision}. Las responsabilidades del módulo incluyen detección de objetos(usando un modelo de visión por computador(YOLO) y otro modelo de inteligencia artificial especializado en la detección de objetos de vocabulario abierto (OWLv2)), reconocimiento facial(usando modelos modernos de aprendizaje profundo integrados en OpenCV (YuNet y SFace)), analítica de imágenes y conversión de coordenadas 2D a 3D. La librería \texttt{vision\_tools} encapsula la interacción con los servicios de visión mediante llamadas síncronas.
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{vision\_tools} (Librería cliente y launch raíz)}
@@ -503,120 +374,45 @@ Librería \textit{Facade} (clase \texttt{Vision}) que encapsula en llamadas sín
 \begin{enumerate}
     \item \textbf{detect\_seats\_node}: \\
     Combina detección YOLO y conversión a pose 3D para determinar si hay un asiento libre frente al robot.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/vision/detect\_seats/debug\_image} (\texttt{sensor\_msgs/Image}).
-        \item \textbf{Tópicos suscritos}: \\
-        Imagen de la cámara (parámetro \texttt{image\_topic}).
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/vision/find\_seat}.
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{/vision/detection}, \texttt{/vision/bbox\_to\_pose}.
-    \end{itemize}
-
-    \item \textbf{Detect\_Fusion\_Node} (\texttt{detect\_fusion\_node}): \\
-    Selecciona un detector 2D (YOLO u OWLv2), obtiene el \textit{bounding box} de la clase solicitada y lo convierte a pose 3D vía \texttt{pc\_bbox\_pose}. \\
-    \textbf{Nota de integración}: Ofrece el servicio como \texttt{/detect\_by\_class}, mientras que la fachada \texttt{Vision::DetectByClass()} invoca \texttt{/vision/detect\_by\_class}; debido a este desfase de prefijo, la llamada síncrona desde la fachada no encuentra servidor en la configuración actual.
-    \begin{itemize}
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/detect\_by\_class}.
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{/vision/detection}, \texttt{/vision/owl/owlv2\_service}, \texttt{/vision/bbox\_to\_pose}.
-    \end{itemize}
-
-    \item \textbf{image\_fixed\_node} (\texttt{hsr\_image\_enhancer}): \\
-    Aplica balance de blancos y realce a la imagen de la cámara del HSR/Takeshi. En la plataforma real con base Robotino y cámara \texttt{openni2\_camera}, este nodo permanece inactivo al no recibir datos en el tópico de origen.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/hardware/camera/image\_raw}.
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{/head\_rgbd\_sensor/rgb/image\_rect\_color}.
-    \end{itemize}
 \end{enumerate}
 
 % ------------------------------------------------------------
-\subsection{Paquete \texttt{object\_recognizer} (Paquetes \texttt{yolo\_detect}, \texttt{owlv2\_detect} y \texttt{pc\_bbox\_pose})}
-Conjunto de tres paquetes ROS orientados a la detección 2D/3D y analítica visual de objetos.
+\subsection{Paquete \texttt{yolo\_detect}}
 
 \begin{enumerate}
     \item \textbf{yolo\_detect\_node} (paquete \texttt{yolo\_detect}): \\
-    Ejecuta YOLO11 sobre la imagen de entrada para publicar la lista continua de objetos o responder a peticiones bajo demanda.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/vision/detections\_list} (consumido por \texttt{person\_tracker} de HRI).
-        \item \textbf{Tópicos suscritos}: \\
-        Imagen de la cámara, \texttt{/vision/enable\_continuous} (\texttt{std\_msgs/Bool}).
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/vision/detection}, \texttt{/vision/enable\_continuous}.
-    \end{itemize}
+    Ejecuta YOLO11s sobre la imagen de entrada para publicar la lista continua de objetos detectados o responder a peticiones bajo demanda.
+\end{enumerate}
 
-    \item \textbf{owlv2\_detect\_node} (\texttt{owl\_server}, paquete \texttt{owlv2\_detect}): \\
-    Ejecuta el modelo OWLv2 para detección de vocabulario abierto basada en texto (\textit{queries}).
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/vision/detections}, \texttt{/vision/owl/debug\_image}.
-        \item \textbf{Tópicos suscritos}: \\
-        Imagen de la cámara.
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/vision/owl/owlv2\_service}.
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{/vision/bbox\_to\_pose}.
-    \end{itemize}
+\subsection{Paquete \texttt{OWL\_detect}}
 
-    \item \textbf{Analize\_node} (\texttt{vision\_analytic\_service}, paquete \texttt{owlv2\_detect}): \\
-    Realiza analítica sobre las detecciones de OWLv2 (conteo con seguimiento IoU, filtrado por tamaño, color y comparación). \\
-    \textbf{Nota de despliegue}: El paquete instala además \texttt{Analize\_Human\_node} (servidor de \texttt{/vision/analyze\_person}), pero este no es lanzado en \texttt{vision.launch.xml}, dejando sin backend activo a \texttt{Vision::AnalyzePerson()}.
-    \begin{itemize}
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{/vision/detections}.
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/vision/count\_objects}, \texttt{/vision/get\_by\_size}, \texttt{/vision/get\_by\_color}, \texttt{/vision/compare\_count}.
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{/vision/owl/owlv2\_service}.
-    \end{itemize}
+\begin{enumerate}
+    \item \textbf{OWL\_service} (paquete \texttt{owlv2\_detect}):\\
+    Ejecuta el modelo OWLv2 (ViT's) para detección de vocabulario abierto basada en texto (\textit{queries}).
 
+        \item \textbf{Analize\_node} (\texttt{vision\_analytic\_service}, paquete \texttt{owlv2\_detect}): \\
+        Realiza analítica sobre las detecciones de OWLv2 (conteo con seguimiento IoU, filtrado por tamaño, color y comparación), cada operación válida solicita detecciones a OWLv2 antes de analizarlas. El conteo devuelto en class\_count corresponde a los objetos de la consulta actual, aunque el nodo también mantiene un historial interno de IDs.
+\end{enumerate}
+
+\subsection{Paquete \texttt{pc\_bbox\_pose}}
+
+\begin{enumerate}
     \item \textbf{pc\_bbox\_pose\_node} (paquete \texttt{pc\_bbox\_pose}): \\
     Procesa un \textit{bounding box} 2D junto con la nube de puntos 3D para estimar la pose tridimensional de un objeto.
-    \begin{itemize}
-        \item \textbf{Tópicos suscritos}: \\
-        Nube de puntos de la cámara (parámetro \texttt{pointcloud\_topic}).
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/vision/bbox\_to\_pose}.
-    \end{itemize}
 \end{enumerate}
 
 % ------------------------------------------------------------
-\subsection{Paquete \texttt{face\_recognizer} (Paquete ROS \texttt{face\_recog})}
-Percepción facial para detección, identificación, descripción y registro de personas.
-
+\subsection{Paquete \texttt{face\_recog}}
 \begin{enumerate}
-    \item \textbf{face\_recog\_node} (\texttt{faceFlorence} / \texttt{face\_service\_node}): \\
-    Implementa el pipeline completo de rostro utilizando el modelo Florence-2. Los ejecutables heredados \texttt{face} y \texttt{facev2} se conservan en el paquete pero no son lanzados.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/face\_recog/debug\_image} (\texttt{sensor\_msgs/Image}).
-        \item \textbf{Tópicos suscritos}: \\
-        Imagen RGB y \texttt{camera\_info} de la cámara.
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/vision/detect\_person}, \texttt{/vision/identify\_person}, \texttt{/vision/describe\_person}, \texttt{/vision/register\_person}.
-    \end{itemize}
+    \item \textbf{face\_recogFlorence2 }: \\
+    Percepción facial para detección, identificación, descripción y registro de personas. Implementa el pipeline completo de rostro utilizando el modelo Florence-2.
 \end{enumerate}
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{table\_alignment}}
-Estimación de la geometría de superficies planas para aproximación del robot.
-
 \begin{enumerate}
     \item \textbf{table\_segmenter\_node}: \\
-    Segmenta la nube de puntos para encontrar el plano de una mesa (redonda o rectangular) y calcula el ángulo de alineación con su borde.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        Nube de puntos segmentada, ángulo de alineación (\texttt{std\_msgs/Float64}), marcadores de visualización para RViz.
-        \item \textbf{Tópicos suscritos}: \\
-        Nube de puntos de la cámara.
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/vision/get\_table\_alignment}.
-    \end{itemize}
+    Estimación de la geometría de superficies planas para aproximación del robot. Segmenta la nube de puntos para encontrar el plano de una mesa (redonda o rectangular) y calcula el ángulo de alineación con su borde.
 \end{enumerate}
 
 % ------------------------------------------------------------
@@ -624,31 +420,11 @@ Estimación de la geometría de superficies planas para aproximación del robot.
 Localización de zonas despejadas para tareas de manipulación y depósito sobre mesas, repisas o contenedores.
 
 \begin{enumerate}
-    \item \textbf{vacancy\_cloud\_filter} (\texttt{vacancy\_cloud\_filter\_node}): \\
+    \item \textbf{vacancy\_cloud\_filter\_node}: \\
     Filtro ROI compartido que recorta la nube de puntos y suspende temporalmente los filtros de navegación mientras la detección de espacio está activa.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/vision/vacancy/points\_filtered}, habilitación de campos potenciales en navegación.
-        \item \textbf{Tópicos suscritos}: \\
-        Nube de puntos de la cámara.
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/vision/vacancy\_cloud\_filter/enable}.
-        \item \textbf{Servicios utilizados}: \\
-        Servicio de habilitación del filtro de obstáculos de \textit{Navigation}.
-    \end{itemize}
 
     \item \textbf{table\_drop\_tf\_node} / \textbf{shelf\_drop\_tf\_node} / \textbf{container\_drop\_tf\_node}: \\
     Calculan puntos libres para la colocación de objetos en mesas, estantes (detectando planos horizontales) y contenedores (acotando la región vía OWLv2). Publican los marcos de referencia resultantes como transformaciones TF (\texttt{table\_frame}, \texttt{shelf\_frame}, \texttt{container\_frame}) y sus aproximaciones (\texttt{*\_drop\_start}).
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        Marcadores de depuración (RViz); nube recortada de depuración en \texttt{container\_drop\_tf\_node}.
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{/vision/vacancy/points\_filtered}.
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{enable} (\texttt{std\_srvs/SetBool}, individual por nodo).
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{/vision/vacancy\_cloud\_filter/enable}; \texttt{/vision/owl/owlv2\_service} (únicamente \texttt{container\_drop\_tf\_node}).
-    \end{itemize}
 \end{enumerate}
 
 % ============================================================
@@ -675,25 +451,10 @@ Proporcionan la interfaz pública del módulo. Ambos nodos operan en el \textit{
 \begin{enumerate}
     \item \textbf{locations\_manager\_node} (paquete \texttt{locations\_manager}): \\
     Guarda y consulta ubicaciones nombradas (\texttt{config/known\_locations.yaml}) y difunde su transformación TF periódicamente para visualización.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        Transformaciones TF de cada ubicación conocida (frecuencia de 0.5s, para visualización en RViz).
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/locations\_manager/add}, \texttt{/locations\_manager/get}, \texttt{/locations\_manager/save}.
-    \end{itemize}
+
 
     \item \textbf{nav\_controller\_node} (paquete \texttt{nav\_controller}): \\
     Traduce las instrucciones de "ir a ubicación conocida" en una meta de pose concreta, calcula un \textit{timeout} proporcional a la distancia a recorrer y difunde la señal de paro de navegación consumida por los \textit{drivers} de hardware.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/nav\_control/goal}, \texttt{/navigation/navigation\_ctrl/stop}.
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{/navigation/status}.
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{/nav\_controller/go\_to\_location}.
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{/locations\_manager/get}.
-    \end{itemize}
 \end{enumerate}
 
 
@@ -707,77 +468,25 @@ Conjunto de nueve paquetes ROS (siete propios y dos exclusivos del backend Takes
 
     \item \textbf{motion\_planner\_node} (\texttt{mvn\_pln}): \\
     Orquesta la maniobra completa de navegación hacia una meta: solicita la ruta a \texttt{path\_planner}, la despacha a \texttt{simple\_move}, coordina \texttt{potential\_fields} y reacciona a paros y eventos de riesgo de colisión.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/navigation/status}, \texttt{/navigation/potential\_fields/enable}, \texttt{/navigation/potential\_fields/enable\_cloud}, \texttt{/simple\_move/goal\_path}, \texttt{/simple\_move/goal\_dist\_angle}, \texttt{/simple\_move/stop}.
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{/nav\_control/goal}, \texttt{/stop}, \texttt{/navigation/stop}, \texttt{/simple\_move/goal\_reached}, \texttt{/navigation/set\_patience}, \texttt{/navigation/potential\_fields/collision\_risk}.
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{path\_planner/plan\_path\_with\_static}, \texttt{path\_planner/plan\_path\_with\_augmented}, y servicios de consulta e información de \texttt{map\_augmenter}.
-    \end{itemize}
 
     \item \textbf{path\_planner\_node} (paquete \texttt{path\_planner}): \\
     Búsqueda de rutas punto a punto utilizando el algoritmo A* (con opción de movimientos diagonales) sobre el mapa estático o el mapa aumentado.
-    \begin{itemize}
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{path\_planner/plan\_path\_with\_static}, \texttt{path\_planner/plan\_path\_with\_augmented}.
-        \item \textbf{Servicios utilizados}: \\
-        Servicios \texttt{GetMap} expuestos por \texttt{map\_augmenter}.
-    \end{itemize}
 
     \item \textbf{simple\_move\_node} (paquete \texttt{simple\_move}): \\
     Convierte rutas u objetivos en comandos de velocidad mediante un control proporcional lineal/angular, con capacidad opcional de orientar la cabeza en la dirección de avance.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/hardware/base/cmd\_vel} (vía \textit{remap} de \texttt{/cmd\_vel}), \texttt{/simple\_move/goal\_reached}, coman\-dos de orientación de cabeza.
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{/simple\_move/goal\_path}, \texttt{/simple\_move/goal\_dist\_angle}, \texttt{/simple\_move/stop}, \texttt{/stop}, señal de paro de navegación, y vector de repulsión de \texttt{potential\_fields}.
-    \end{itemize}
 
     \item \textbf{potential\_fields\_node} (paquete \texttt{potential\_fields}): \\
     Calcula un campo de repulsión reactivo a partir de datos de LiDAR y nube de puntos, superponiéndolo al \texttt{cmd\_vel} de \texttt{simple\_move} para evitar colisiones dinámicas no mapeadas. Incluye el script auxiliar \texttt{publish\_enable.py}.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        \texttt{/hardware/base/cmd\_vel} (modificación de velocidad comandada), \texttt{/navigation/potential\_fields/collision\_risk}.
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{/navigation/potential\_fields/enable}, \texttt{/navigation/potential\_fields/enable\_cloud}, \texttt{/simple\_move/goal\_path}, LiDAR y nube de puntos.
-    \end{itemize}
 
     \item \textbf{map\_augmenter\_node} (paquete \texttt{map\_augmenter}): \\
     Combina el mapa estático, el mapa de prohibición y los obstáculos dinámicos en un "mapa aumentado" (y su representación de costos) para la planeación de rutas. \\
     \textbf{Nota de integración}: El paquete compila además \texttt{cloud\_filter\_node}, pero este permanece comentado en el \textit{launch} activo.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        Mapa aumentado (\texttt{nav\_msgs/OccupancyGrid}) y mapa de planeación.
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{clicked\_point} (vía \texttt{map\_enhancer}), mapa de obstáculos dinámicos.
-        \item \textbf{Servicios ofrecidos}: \\
-        Cuatro variantes del servicio \texttt{GetMap} (estático, costo estático, aumentado, costo aumentado), \texttt{are\_there\_obstacles}, \texttt{is\_inside\_obstacles}.
-        \item \textbf{Servicios utilizados}: \\
-        Servicios \texttt{GetMap} del servidor de mapa estático y del mapa de prohibición.
-    \end{itemize}
 
     \item \textbf{obstacle\_detector\_node} (paquete \texttt{map\_augmenter}): \\
     Detecta obstáculos dinámicos a partir del LiDAR y la nube de puntos filtrando por una ventana espacial configurable, publicando un \texttt{OccupancyGrid} con decaimiento temporal.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        Mapa de obstáculos dinámicos (\texttt{nav\_msgs/OccupancyGrid}).
-        \item \textbf{Tópicos suscritos}: \\
-        LiDAR y nube de puntos de la cámara.
-        \item \textbf{Servicios utilizados}: \\
-        \texttt{GetMap} del servidor de mapa estático.
-    \end{itemize}
 
     \item \textbf{augment\_gridmap\_online\_node} (\texttt{map\_enhancer}, paquete \texttt{augment\_gridmap\_online}): \\
     Herramienta interactiva para añadir obstáculos permanentes al mapa de prohibición mediante clics de selección en RViz.
-    \begin{itemize}
-        \item \textbf{Tópicos publicados}: \\
-        Mapa de prohibición aumentado, metadatos y marcador de depuración.
-        \item \textbf{Tópicos suscritos}: \\
-        \texttt{clicked\_point}, mapa de prohibición base.
-        \item \textbf{Servicios ofrecidos}: \\
-        \texttt{Empty} (limpiar mapa) y \texttt{GetMap} (remapeado a \texttt{prohibition\_map}).
-    \end{itemize}
 
     \item \textbf{hardware\_controller} (\textbf{no usado por Justina}): \\
     Contiene \texttt{head\_controller} y \texttt{arm\_controller}. Traduce entre la convención de Justina y la interfaz de ROS 2 \texttt{JointTrajectoryController}. Solo se referencia desde los archivos de lanzamiento orientados al backend Takeshi/HSR.
