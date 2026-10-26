@@ -49,7 +49,7 @@ Interpreta comandos en lenguaje natural.
     Analiza oraciones con un \textit{pipeline} de spaCy \texttt{en\_core\_web\_trf} y genera representaciones semánticas estructuradas.
 
     \item \textbf{entity\_extractor\_node}: \\
-    Extrae entidades nombradas consultando los diccionarios del paquete \texttt{knowledge\_bank}.
+    Extrae entidades nombradas consultando los diccionarios del paquete \texttt{knowledge\_\allowbreak{}bank}.
 \end{enumerate}
 
 % ------------------------------------------------------------
@@ -223,7 +223,7 @@ Concentra la configuración estática y el estado persistente del módulo:
 \begin{itemize}
     \item \textbf{Dominios estáticos}: \texttt{domains/locations.yaml}, \texttt{objects.yaml} y \texttt{people.yaml}.
     \item \textbf{Banco de frases}: Archivos por contexto de prueba en \texttt{phrases/}: \texttt{gpsr.yaml}, \texttt{hri.yaml}, \texttt{inspection.yaml}, \texttt{laundry.yaml}, \texttt{pnp.yaml} y \texttt{restaurant.yaml}.
-    \item \textbf{Vocabulario}: Diccionarios de bebidas, nombres, objetos y órdenes en \texttt{dictionaries/}.
+    \item \textbf{Vocabulario}: Diccionarios de bebidas, nombres, objetos y órdenes en \texttt{dictiona-\allowbreak{}ries/}.
     \item \textbf{Estado en ejecución}: \texttt{runtime/world.yaml}, actualizado y persistido de forma continua.
 \end{itemize}
 
@@ -236,7 +236,7 @@ Gestiona activamente la información del módulo y la resolución de diálogos.
     Mantiene en memoria el estado del mundo: robot, ubicaciones, objetos, personas y analítica. Se inicializa con los dominios de \texttt{knowledge\_bank} y persiste cada cambio en \texttt{runtime/world.yaml}. Atiende las peticiones en grupos de \textit{callbacks} independientes protegidos por un \textit{mutex} de lectura y escritura que permite lecturas simultáneas.
 
     \item \textbf{phrase\_manager\_node}: \\
-    Carga las plantillas de diálogo de \texttt{knowledge\_bank/phrases}. Selecciona una frase aleatoria para la clave solicitada y resuelve sus comodines con formato \texttt{\{categoria:atributo:id\}} o \texttt{categoria\_atributo[\_id]} consultando el estado del mundo.
+    Carga las plantillas de diálogo de \texttt{knowledge\_bank/phrases}. Selecciona una frase aleatoria para la clave solicitada y resuelve sus comodines con formato \texttt{\{categoria:\allowbreak{}atributo:id\}} o \texttt{categoria\_atributo[\_id]} consultando el estado del mundo.
 \end{enumerate}
 
 % ============================================================
@@ -250,7 +250,7 @@ El módulo HRI es responsable de establecer y mantener la interacción directa e
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{hri\_tools}}
-Proporciona la biblioteca \texttt{HRI} que encapsula en llamadas síncronas los servicios de voz, seguimiento y detección de poses bajo el \textit{namespace} \texttt{/hri}. Aloja el \textit{launch} \texttt{hri.launch.xml}, que levanta los nodos \texttt{Talker}, \texttt{Listener}, \texttt{human\_detector} y \texttt{human\_follower}.
+Proporciona la biblioteca \texttt{HRI} que encapsula en llamadas síncronas los servicios de voz, seguimiento y detección de poses bajo el \textit{namespace} \texttt{/hri}. Aloja el \textit{launch} \texttt{hri.launch.xml}, que levanta los nodos \texttt{Talker}, \texttt{Listener}, \texttt{human\_detector} y \texttt{human\_\allowbreak{}follower}.
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{human\_detection}}
@@ -384,10 +384,10 @@ Localiza zonas despejadas para manipulación y depósito sobre mesas, repisas o 
     Calcula puntos libres para colocar objetos en mesas y publica las transformaciones TF \texttt{table\_frame} y \texttt{table\_drop\_start}.
 
     \item \textbf{shelf\_drop\_tf\_node}: \\
-    Calcula puntos libres para colocar objetos en estantes mediante la detección de planos horizontales y publica las transformaciones TF \texttt{shelf\_frame} y \texttt{shelf\_drop\_start}.
+    Calcula puntos libres para colocar objetos en estantes mediante la detección de planos horizontales y publica las transformaciones TF \texttt{shelf\_frame} y \texttt{shelf\_drop\_\allowbreak{}start}.
 
     \item \textbf{container\_drop\_tf\_node}: \\
-    Calcula puntos libres para colocar objetos en contenedores acotando la región con OWLv2 y publica las transformaciones TF \texttt{container\_frame} y \texttt{container\_drop\_start}.
+    Calcula puntos libres para colocar objetos en contenedores acotando la región con OWLv2 y publica las transformaciones TF \texttt{container\_frame} y \texttt{container\_drop\_\allowbreak{}start}.
 \end{enumerate}
 
 % ============================================================
@@ -423,7 +423,7 @@ Expone la interfaz de navegación a ubicaciones conocidas.
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{navigation\_start}}
-Reúne la configuración, los mapas y los \textit{launch} de la pila de navegación: \texttt{navigation\_justina\_amcl.launch.xml}, que opera en modo AMCL por defecto, y \texttt{navigation\_justina\_slam.launch.xml}, que opera en modo SLAM mediante \texttt{slam\_toolbox}. Incluye los mapas estáticos y de prohibición por escenario, entre ellos RoboCup 2026 y TMR 2026.
+Reúne la configuración, los mapas y los \textit{launch} de la pila de navegación: \texttt{navigation\_\allowbreak{}justina\_amcl.launch.xml}, que opera en modo AMCL por defecto, y \texttt{navigation\_jus-\allowbreak{}tina\_slam.launch.xml}, que opera en modo SLAM mediante \texttt{slam\_toolbox}. Incluye los mapas estáticos y de prohibición por escenario, entre ellos RoboCup 2026 y TMR 2026.
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{mvn\_pln}}
@@ -484,7 +484,7 @@ Edita de forma interactiva el mapa de prohibición.
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{mapless\_nav}}
-Implementa navegación reactiva sin mapa global mediante campos potenciales, un árbol de comportamiento y un modelo recurrente entrenado. Se lanza desde \texttt{justina\_mapless\_wbt.launch.xml} en el entorno de simulación Webots.
+Implementa navegación reactiva sin mapa global mediante campos potenciales, un árbol de comportamiento y un modelo recurrente entrenado. Se lanza desde \texttt{justina\_map-\allowbreak{}less\_wbt.launch.xml} en el entorno de simulación Webots.
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{debugger}}
@@ -507,7 +507,7 @@ El módulo \textit{Manipulation} es responsable de planear y coordinar los movim
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{manipulation\_tools}}
 
-Proporciona la biblioteca \texttt{Manipulation} que encapsula en llamadas síncronas los servicios de planeación y seguimiento de trayectorias bajo el \textit{namespace} \texttt{/manipulation}. Aloja el \textit{launch} \texttt{manipulation.launch.xml}, que levanta los nodos \texttt{move\_group}, \texttt{manipulation\_planner\_node}, \texttt{manipulation\_controller\_node} y \texttt{manipulation\_cloud\_filter\_node}, y remapea \texttt{/manipulation/joint\_states} a \texttt{/hardware/joint\_states}.
+Proporciona la biblioteca \texttt{Manipulation} que encapsula en llamadas síncronas los servicios de planeación y seguimiento de trayectorias bajo el \textit{namespace} \texttt{/manipulation}. Aloja el \textit{launch} \texttt{manipulation.launch.xml}, que levanta los nodos \texttt{move\_group}, \texttt{manipu-\allowbreak{}lation\_planner\_node}, \texttt{manipulation\_controller\_node} y \texttt{manipulation\_cloud\_fil-\allowbreak{}ter\_node}, y remapea \texttt{/manipulation/joint\_states} a \texttt{/hardware/joint\_states}.
 
 \begin{enumerate}
     \item \textbf{manipulation\_cloud\_filter\_node}: \\
@@ -599,7 +599,7 @@ Publica la posición de la cabeza a partir de un punto 3D de interés recibido e
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{justina\_hardware}}
 
-Realiza el \textit{bringup} de la base Robotino. Bajo el \textit{namespace} \texttt{/hardware}, remapea los tópicos \texttt{joint\_states} relativos de cada \textit{driver} al tópico canónico \texttt{/hardware/joint\_states}, incluye los \textit{launch} de los subcomponentes, ejecuta la GUI del panel de operación y levanta un \texttt{robot\_state\_publisher} local con entrada remapeada a \path{/manipulation/joint_states}.
+Realiza el \textit{bringup} de la base Robotino. Bajo el \textit{namespace} \texttt{/hardware}, remapea los tópicos \texttt{joint\_states} relativos de cada \textit{driver} al tópico canónico \texttt{/hardware/joint\_sta-\allowbreak{}tes}, incluye los \textit{launch} de los subcomponentes, ejecuta la GUI del panel de operación y levanta un \texttt{robot\_state\_publisher} local con entrada remapeada a \path{/manipulation/joint_states}.
 
 % ------------------------------------------------------------
 \subsection{Paquete \texttt{base}}
@@ -663,7 +663,7 @@ Proporciona los \textit{drivers} para el control de las pinzas del robot.
 \begin{enumerate}
 
 \item \textbf{grippers\_node}: \\
-Controla las pinzas por TCP/IP hacia un microcontrolador RP2350 con un protocolo binario propio de 8 bytes. Se instancia dos veces, parametrizado por \texttt{left\_gripper.yaml} y \texttt{right\_gripper.yaml}.
+Controla las pinzas por TCP/IP hacia un microcontrolador RP2350 con un protocolo binario propio de 8 bytes. Se instancia dos veces, parametrizado por \texttt{left\_gri-\allowbreak{}pper.yaml} y \texttt{right\_gripper.yaml}.
 
 \end{enumerate}
 
